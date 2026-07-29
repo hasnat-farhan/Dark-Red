@@ -12,6 +12,8 @@ import com.antor.f2p.engine.api.MeshHealthSnapshot;
 import com.antor.f2p.engine.api.WanderingFibreEngine;
 
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -39,6 +41,7 @@ public class F2PBridge {
 
     private final WanderingFibreEngine engine;
     private final AtomicBoolean started;
+    private final ExecutorService executor;
 
     /** Error-boundary status code: last non-fatal error or 0 if healthy. */
     private volatile int lastStatusCode;
@@ -47,6 +50,11 @@ public class F2PBridge {
     public F2PBridge() {
         this.engine = new WanderingFibreEngine();
         this.started = new AtomicBoolean(false);
+        this.executor = Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "f2p-engine-init");
+            t.setDaemon(true);
+            return t;
+        });
         this.lastStatusCode = 0;
         this.lastStatusMessage = "OK";
     }
@@ -134,6 +142,7 @@ public class F2PBridge {
         if (!started.getAndSet(false)) return;
         try {
             engine.shutdown();
+            executor.shutdownNow();
             Log.i(TAG, "Engine stopped");
         } catch (Exception e) {
             Log.e(TAG, "Error during engine shutdown", e);
@@ -198,6 +207,40 @@ public class F2PBridge {
     }
 
     // ---------------------------------------------------------------
+    //  Asynchronous engine startup (off UI thread)
+    // ---------------------------------------------------------------
+
+    /** Callback for {@link #startEngineAsync(EngineConfig, OnEngineStartListener)}. */
+    public interface OnEngineStartListener {
+        /** Invoked on the <b>main thread</b> once the engine initialises successfully. */
+        void onEngineStarted();
+        /** Invoked on the <b>main thread</b> if engine initialisation failed. */
+        void onEngineError(int statusCode, String message);
+    }
+
+    /**
+     * Starts the engine on a dedicated background thread so the calling
+     * (typically UI) thread is never blocked.
+     * <p>The listener callbacks are posted to the Android main looper.</p>
+     */
+    public void startEngineAsync(@androidx.annotation.Nullable EngineConfig config,
+                                  @androidx.annotation.Nullable OnEngineStartListener listener) {
+        executor.execute(() -> {
+            startEngine(config);
+            android.os.Handler mainHandler = new android.os.Handler(
+                    android.os.Looper.getMainLooper());
+            if (listener != null) {
+                if (started.get()) {
+                    mainHandler.post(listener::onEngineStarted);
+                } else {
+                    mainHandler.post(() ->
+                            listener.onEngineError(lastStatusCode, lastStatusMessage));
+                }
+            }
+        });
+    }
+
+    // ---------------------------------------------------------------
     //  Signal dispatch
     // ---------------------------------------------------------------
 
@@ -217,17 +260,14 @@ public class F2PBridge {
      * Routes a message through the selected transport mode.
      *
      * @param messageText  the text to send
-     * @param recipientId  destination node ID or phone number (for SMS)
-     * @param selectedMode which transport to use
-     * @param smsSender    optional SmsManager callback for SMS dispatch (may be null for non-SMS)
+     * @param recipientId  destination node ID
+     * @param selectedMode which transport to use (SOSBLUE_MESH or F2P_SERVERLESS)
      * @return {@code true} if the message was accepted for dispatch
      */
     public boolean sendMessage(String messageText, String recipientId,
-                               TransportMode selectedMode,
-                               @android.annotation.Nullable SmsSender smsSender) {
+                               TransportMode selectedMode) {
         switch (selectedMode) {
             case SOSBLUE_MESH: {
-                // Original SOSBlue mesh relay via FibreSignal
                 dispatchSignal("chat_message", Map.of(
                         "recipient", recipientId,
                         "text", messageText,
@@ -239,7 +279,6 @@ public class F2PBridge {
             case F2P_SERVERLESS: {
                 if (!isRouting()) {
                     Log.w(TAG, "F2P_SERVERLESS selected but engine not routing — queuing offline");
-                    // Engine auto-queues when not in routing state
                 }
                 dispatchSignal("chat_message", Map.of(
                         "recipient", recipientId,
@@ -249,23 +288,28 @@ public class F2PBridge {
                 Log.d(TAG, "sendMessage → F2P_SERVERLESS to " + recipientId);
                 return true;
             }
-            case SMS: {
-                if (smsSender != null) {
-                    smsSender.sendSms(recipientId, messageText);
-                    Log.d(TAG, "sendMessage → SMS to " + recipientId);
-                    return true;
-                }
-                Log.w(TAG, "SMS selected but no SmsSender provided");
-                return false;
-            }
             default:
                 return false;
         }
     }
 
-    /** Functional interface for SMS sending, implemented by the Activity. */
-    public interface SmsSender {
-        void sendSms(String phoneNumber, String message);
+    // ---------------------------------------------------------------
+    //  Multi-Transport sendMessage (async, off UI thread)
+    // ---------------------------------------------------------------
+
+    /**
+     * Sends a message on the background executor and invokes {@code onComplete}
+     * on the main thread when the dispatch finishes.
+     */
+    public void sendMessageAsync(String messageText, String recipientId,
+                                  TransportMode selectedMode,
+                                  @androidx.annotation.Nullable Runnable onComplete) {
+        executor.execute(() -> {
+            sendMessage(messageText, recipientId, selectedMode);
+            if (onComplete != null) {
+                new android.os.Handler(android.os.Looper.getMainLooper()).post(onComplete);
+            }
+        });
     }
 
     // ---------------------------------------------------------------

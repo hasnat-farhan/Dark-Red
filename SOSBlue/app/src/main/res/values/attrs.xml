@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <declare-styleable name="TransportSelectorView">
-        <attr name="defaultMode" format="integer" />
-    </declare-styleable>
+    <!-- All custom attributes are currently unused.
+         Add new declare-styleable blocks here as needed. -->
 </resources>

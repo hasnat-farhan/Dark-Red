@@ -1,36 +1,46 @@
 package com.antor.sosblue;
 
-import android.Manifest;
-import android.content.pm.PackageManager;
 import android.os.Bundle;
-import android.telephony.SmsManager;
 import android.view.View;
+import android.widget.Button;
+import android.widget.RadioGroup;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.activity.EdgeToEdge;
-import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 import com.antor.f2p.engine.api.EngineConfig;
 import com.antor.sosblue.bridge.F2PBridge;
 import com.antor.sosblue.bridge.TransportMode;
-import com.antor.sosblue.ui.TransportSelectorView;
 
 import com.google.android.material.snackbar.Snackbar;
 
-public class MainActivity extends AppCompatActivity implements F2PBridge.SmsSender {
+import java.util.ArrayList;
+import java.util.List;
 
-    private static final int SMS_PERMISSION_REQUEST_CODE = 1001;
+public class MainActivity extends AppCompatActivity {
 
     private F2PBridge bridge;
-    private TransportSelectorView transportSelector;
-    private TextView transportStatusHint;
+    private RadioGroup transportRadioGroup;
+    private TextView textStatus;
+    private ChatAdapter chatAdapter;
+    private View loadingContainer;
+    private View sendButton;
+
+    // Peer discovery
+    private View peerPanel;
+    private RecyclerView peerRecyclerView;
+    private TextView peerEmptyHint;
+    private TextView peerCountLabel;
+    private PeerDiscoveryAdapter peerAdapter;
+    private boolean peerPanelVisible;
+    private boolean engineReady;
 
     // ---------------------------------------------------------------
     //  Lifecycle
@@ -51,30 +61,124 @@ public class MainActivity extends AppCompatActivity implements F2PBridge.SmsSend
         // Initialise F2P Bridge
         bridge = new F2PBridge();
 
-        // Start the engine with default config
-        EngineConfig config = EngineConfig.builder()
-                .nodeId("sosblue-" + System.currentTimeMillis())
-                .build();
-        bridge.startEngine(config);
+        // References
+        textStatus = findViewById(R.id.textStatus);
+        transportRadioGroup = findViewById(R.id.transportRadioGroup);
+        loadingContainer = findViewById(R.id.loadingContainer);
+        sendButton = findViewById(R.id.sendButton);
 
-        // Transport selector
-        transportSelector = findViewById(R.id.transportSelector);
-        transportStatusHint = findViewById(R.id.transportStatusHint);
+        // ---------------------------------------------------------------
+        //  Chat RecyclerView (in-memory adapter)
+        // ---------------------------------------------------------------
+
+        RecyclerView chatList = findViewById(R.id.chatRecyclerView);
+        chatAdapter = new ChatAdapter();
+        chatList.setLayoutManager(new LinearLayoutManager(this));
+        chatList.setAdapter(chatAdapter);
 
         // Restore persisted preference
         TransportMode savedMode = TransportMode.load(this);
-        transportSelector.setSelectedMode(savedMode);
+        if (savedMode == TransportMode.F2P_SERVERLESS) {
+            transportRadioGroup.check(R.id.rb_f2p_serverless);
+        } else {
+            transportRadioGroup.check(R.id.rb_sosblue_mesh);
+        }
 
-        transportSelector.setOnModeSelectedListener(mode -> {
+        // Listen for RadioGroup changes — persist mode
+        transportRadioGroup.setOnCheckedChangeListener((group, checkedId) -> {
+            TransportMode mode = radioIdToTransportMode(checkedId);
             mode.save(this);
             onTransportModeChanged(mode);
         });
 
-        // Immediate check for initial mode
-        onTransportModeChanged(transportSelector.getSelectedMode());
+        // Initial status display (engine not ready yet — skip peer panel)
+        onTransportModeChanged(
+                radioIdToTransportMode(transportRadioGroup.getCheckedRadioButtonId()));
 
-        // Wire send button
-        findViewById(R.id.sendButton).setOnClickListener(v -> sendCurrentMessage());
+        // ---------------------------------------------------------------
+        //  Top action bar — preserve touch events
+        // ---------------------------------------------------------------
+
+        findViewById(R.id.searchIcon).setOnClickListener(v ->
+                Toast.makeText(this, "Search", Toast.LENGTH_SHORT).show());
+        findViewById(R.id.discoverIcon).setOnClickListener(v ->
+                Toast.makeText(this, "Discover", Toast.LENGTH_SHORT).show());
+        findViewById(R.id.threeDotIcon).setOnClickListener(v ->
+                Toast.makeText(this, "Menu", Toast.LENGTH_SHORT).show());
+        findViewById(R.id.switchInputImage).setOnClickListener(v ->
+                Toast.makeText(this, "Attach file", Toast.LENGTH_SHORT).show());
+
+        // ---------------------------------------------------------------
+        //  Peer discovery panel
+        // ---------------------------------------------------------------
+
+        peerPanel = findViewById(R.id.peerDiscoveryPanel);
+        peerRecyclerView = findViewById(R.id.peerRecyclerView);
+        peerEmptyHint = findViewById(R.id.peerEmptyHint);
+        peerCountLabel = findViewById(R.id.peerCountLabel);
+        Button peerRefreshButton = findViewById(R.id.peerRefreshButton);
+
+        peerAdapter = new PeerDiscoveryAdapter(new ArrayList<>(), peer -> {
+            Toast.makeText(this, "Chat with " + peer.getName(), Toast.LENGTH_SHORT).show();
+            peerPanelVisible = false;
+            peerPanel.setVisibility(View.GONE);
+        });
+        peerRecyclerView.setLayoutManager(new LinearLayoutManager(this));
+        peerRecyclerView.setAdapter(peerAdapter);
+
+        // Tap the title bar to toggle the peer panel
+        findViewById(R.id.appTitle).setOnClickListener(v -> {
+            if (!peerPanelVisible) {
+                refreshPeerList();
+                showPeerPanel(true);
+            } else {
+                showPeerPanel(false);
+            }
+        });
+
+        // Refresh button re-scans peers
+        peerRefreshButton.setOnClickListener(v -> refreshPeerList());
+
+        // ---------------------------------------------------------------
+        //  Send button
+        // ---------------------------------------------------------------
+
+        sendButton.setOnClickListener(v -> sendCurrentMessage());
+
+        // Handle IME action on the message input
+        android.widget.EditText inputMessage = findViewById(R.id.inputMessage);
+        inputMessage.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND) {
+                sendCurrentMessage();
+                return true;
+            }
+            return false;
+        });
+
+        // ---------------------------------------------------------------
+        //  Start engine on a background thread — NEVER block the UI thread
+        // ---------------------------------------------------------------
+
+        showLoading(true);
+
+        EngineConfig config = EngineConfig.builder()
+                .nodeId("sosblue-" + System.currentTimeMillis())
+                .build();
+
+        bridge.startEngineAsync(config, new F2PBridge.OnEngineStartListener() {
+            @Override
+            public void onEngineStarted() {
+                engineReady = true;
+                showLoading(false);
+                onTransportModeChanged(
+                        radioIdToTransportMode(transportRadioGroup.getCheckedRadioButtonId()));
+            }
+
+            @Override
+            public void onEngineError(int statusCode, String message) {
+                showLoading(false);
+            }
+        });
     }
 
     @Override
@@ -86,57 +190,118 @@ public class MainActivity extends AppCompatActivity implements F2PBridge.SmsSend
     }
 
     // ---------------------------------------------------------------
-    //  Transport mode switching
+    //  Helpers
     // ---------------------------------------------------------------
 
-    private void onTransportModeChanged(TransportMode mode) {
-        if (transportStatusHint == null) return;
+    /** Maps a RadioButton ID to the corresponding TransportMode. */
+    private static TransportMode radioIdToTransportMode(int radioId) {
+        if (radioId == R.id.rb_f2p_serverless) {
+            return TransportMode.F2P_SERVERLESS;
+        }
+        return TransportMode.SOSBLUE_MESH;  // default
+    }
 
-        switch (mode) {
-            case SOSBLUE_MESH:
-                transportStatusHint.setText("Mesh P2P");
-                transportStatusHint.setTextColor(0xFF0D80E0);
-                break;
+    /** Shows or hides the full-screen loading overlay. */
+    private void showLoading(boolean show) {
+        if (textStatus != null) {
+            textStatus.setVisibility(show ? View.VISIBLE : View.GONE);
+        }
+    }
 
-            case F2P_SERVERLESS:
-                if (bridge.isRouting()) {
-                    transportStatusHint.setText("F2P Serverless");
-                    transportStatusHint.setTextColor(0xFF0D80E0);
-                } else {
-                    transportStatusHint.setText("F2P offline");
-                    transportStatusHint.setTextColor(0xFFE67E22);  // amber warning
+    /** Shows or hides the inline send-progress spinner. */
+    private void showSendProgress(boolean show) {
+        if (loadingContainer != null) {
+            loadingContainer.setVisibility(show ? View.VISIBLE : View.GONE);
+        }
+        if (sendButton != null) {
+            sendButton.setVisibility(show ? View.INVISIBLE : View.VISIBLE);
+        }
+    }
 
-                    // Show Snackbar with fallback options
-                    View root = findViewById(R.id.main);
-                    Snackbar sb = Snackbar.make(root, "F2P engine not connected",
-                            Snackbar.LENGTH_LONG);
-                    sb.setAction("Use Mesh", v -> {
-                        transportSelector.setSelectedMode(TransportMode.SOSBLUE_MESH);
-                        transportSelector.getSelectedMode().save(this);
-                    });
-                    sb.show();
-                }
-                break;
-
-            case SMS:
-                if (ContextCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS)
-                        != PackageManager.PERMISSION_GRANTED) {
-                    transportStatusHint.setText("SMS (grant permission)");
-                    transportStatusHint.setTextColor(0xFFE74C3C);  // red
-
-                    ActivityCompat.requestPermissions(this,
-                            new String[]{Manifest.permission.SEND_SMS},
-                            SMS_PERMISSION_REQUEST_CODE);
-                } else {
-                    transportStatusHint.setText("SMS");
-                    transportStatusHint.setTextColor(0xFF27AE60);  // green
-                }
-                break;
+    /** Scrolls the chat RecyclerView to the very last item. */
+    private void scrollChatToBottom() {
+        RecyclerView chatList = findViewById(R.id.chatRecyclerView);
+        if (chatList != null && chatAdapter != null) {
+            int count = chatAdapter.getItemCount();
+            if (count > 0) {
+                chatList.smoothScrollToPosition(count - 1);
+            }
         }
     }
 
     // ---------------------------------------------------------------
-    //  Send message (called from send button / IME action)
+    //  Peer discovery panel
+    // ---------------------------------------------------------------
+
+    /** Toggles the peer discovery panel visibility. */
+    private void showPeerPanel(boolean show) {
+        peerPanelVisible = show;
+        if (peerPanel != null) {
+            peerPanel.setVisibility(show ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    /** Queries F2PBridge for known peers and updates the list. */
+    private void refreshPeerList() {
+        // Gather simulated peers from the bridge's known-peers count
+        int knownCount = 0;
+        int activeCount = 0;
+
+        // engineReady check avoids NPE on routingTable before initialize()
+        if (engineReady) {
+            knownCount = bridge.getKnownPeerCount();
+            activeCount = bridge.getActiveNodeCount();
+        }
+
+        List<PeerDevice> devices = new ArrayList<>();
+        for (int i = 0; i < Math.max(knownCount, 2); i++) {
+            String id = "peer-" + (i + 1) + "-a1b2c3d" + (i + 1);
+            String name = "Device " + (i + 1);
+            int signal = (i % 4) + 1;
+            boolean connected = i < activeCount;
+            devices.add(new PeerDevice(id, name, signal, connected));
+        }
+
+        peerAdapter.updatePeers(devices);
+
+        // Update count label + empty hint
+        peerCountLabel.setText(activeCount + " peer(s) online · "
+                + knownCount + " discovered");
+        peerEmptyHint.setVisibility(devices.isEmpty() ? View.VISIBLE : View.GONE);
+    }
+
+    // ---------------------------------------------------------------
+    //  Transport mode switching
+    // ---------------------------------------------------------------
+
+    private void onTransportModeChanged(TransportMode mode) {
+        if (mode == TransportMode.SOSBLUE_MESH) {
+            // Show peer discovery panel when Mesh is selected
+            if (engineReady) {
+                refreshPeerList();
+                showPeerPanel(true);
+            }
+            // else: engine callback will trigger refresh once ready
+        } else {
+            // F2P engine stays IDLE until explicitly selected
+            showPeerPanel(false);
+
+            if (!bridge.isRouting()) {
+                View root = findViewById(R.id.main);
+                Snackbar sb = Snackbar.make(root, "F2P engine not connected",
+                        Snackbar.LENGTH_LONG);
+                sb.setAction("Switch to Mesh", v -> {
+                    transportRadioGroup.check(R.id.rb_sosblue_mesh);
+                    Toast.makeText(this, "Switched to SOSBlue Mesh", Toast.LENGTH_SHORT).show();
+                });
+                sb.show();
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------
+    //  Send message
+    //  Immediately renders locally, then dispatches async
     // ---------------------------------------------------------------
 
     private void sendCurrentMessage() {
@@ -145,58 +310,38 @@ public class MainActivity extends AppCompatActivity implements F2PBridge.SmsSend
         ).trim();
         if (messageText.isEmpty()) return;
 
-        String recipientId = bridge.getLocalNodeId(); // or from UI
-        TransportMode mode = transportSelector.getSelectedMode();
+        // 1. Remove input text immediately
+        ((android.widget.EditText) findViewById(R.id.inputMessage)).setText("");
 
-        boolean accepted = bridge.sendMessage(messageText, recipientId, mode, this);
+        // 2. Render the outbound message in the chat list immediately
+        MessageModel outbound = new MessageModel(messageText, true /* sent */);
+        java.util.List<MessageModel> updated = new java.util.ArrayList<>(
+                chatAdapter.getCurrentList());
+        updated.add(outbound);
 
-        if (accepted) {
-            ((android.widget.EditText) findViewById(R.id.inputMessage)).setText("");
-        } else {
-            Toast.makeText(this, "Failed to send via " + mode.getLabel(),
-                    Toast.LENGTH_SHORT).show();
-        }
-    }
+        final RecyclerView chatList = findViewById(R.id.chatRecyclerView);
 
-    // ---------------------------------------------------------------
-    //  SMS permission result
-    // ---------------------------------------------------------------
+        // One-shot observer: scroll to bottom the moment items are inserted
+        final RecyclerView.AdapterDataObserver scrollObserver =
+                new RecyclerView.AdapterDataObserver() {
+                    @Override
+                    public void onItemRangeInserted(int positionStart, int itemCount) {
+                        chatList.smoothScrollToPosition(chatAdapter.getItemCount() - 1);
+                        chatAdapter.unregisterAdapterDataObserver(this);
+                    }
+                };
+        chatAdapter.registerAdapterDataObserver(scrollObserver);
+        chatAdapter.submitList(updated);
 
-    @Override
-    public void onRequestPermissionsResult(int requestCode,
-                                           @NonNull String[] permissions,
-                                           @NonNull int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        // 3. Show inline progress spinner on the send button
+        showSendProgress(true);
 
-        if (requestCode == SMS_PERMISSION_REQUEST_CODE) {
-            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                Toast.makeText(this, "SMS permission granted", Toast.LENGTH_SHORT).show();
-                onTransportModeChanged(TransportMode.SMS);
-            } else {
-                Toast.makeText(this, "SMS permission denied — falling back to SOSBlue Mesh",
-                        Toast.LENGTH_LONG).show();
-                transportSelector.setSelectedMode(TransportMode.SOSBLUE_MESH);
-            }
-        }
-    }
+        // 4. Dispatch to transport engine asynchronously
+        String recipientId = bridge.getLocalNodeId();
+        TransportMode mode = radioIdToTransportMode(
+                transportRadioGroup.getCheckedRadioButtonId());
 
-    // ---------------------------------------------------------------
-    //  F2PBridge.SmsSender implementation
-    // ---------------------------------------------------------------
-
-    @Override
-    public void sendSms(String phoneNumber, String message) {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS)
-                != PackageManager.PERMISSION_GRANTED) {
-            Toast.makeText(this, "SMS permission not granted", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        try {
-            SmsManager sms = SmsManager.getDefault();
-            sms.sendTextMessage(phoneNumber, null, message, null, null);
-            Toast.makeText(this, "SMS sent to " + phoneNumber, Toast.LENGTH_SHORT).show();
-        } catch (Exception e) {
-            Toast.makeText(this, "SMS failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
-        }
+        bridge.sendMessageAsync(messageText, recipientId, mode,
+                () -> showSendProgress(false));
     }
 }

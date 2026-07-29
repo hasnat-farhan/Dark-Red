@@ -186,61 +186,129 @@
 
     </LinearLayout>
 
-    <LinearLayout
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:orientation="vertical">
-
+        android:layout_weight="1">
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/chatRecyclerView"
             android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:clipToPadding="false"
-            android:padding="0dp" />
+            android:layout_height="match_parent"
+            android:clipToPadding="false" />
+
+        <!-- Peer discovery panel (slides over chat when SOSBlue Mesh is active) -->
+        <LinearLayout
+            android:id="@+id/peerDiscoveryPanel"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#F0F4F8"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:padding="16dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/peerPanelTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Nearby Devices"
+                android:textColor="#333333"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="4dp" />
+
+            <TextView
+                android:id="@+id/peerPanelSubtitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="SOSBlue Mesh"
+                android:textColor="#0D80E0"
+                android:textSize="13sp"
+                android:layout_marginBottom="16dp" />
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/peerRecyclerView"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:clipToPadding="false" />
+
+            <TextView
+                android:id="@+id/peerEmptyHint"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="No peers discovered yet.\nTap the title to refresh."
+                android:textColor="#999999"
+                android:textSize="14sp"
+                android:gravity="center"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/peerCountLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0 peers online"
+                android:textColor="#888888"
+                android:textSize="12sp"
+                android:layout_marginTop="12dp" />
+
+            <Button
+                android:id="@+id/peerRefreshButton"
+                style="?android:attr/borderlessButtonStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Search again"
+                android:textColor="#0D80E0"
+                android:layout_marginTop="4dp" />
+
+        </LinearLayout>
 
         <TextView
             android:id="@+id/textStatus"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:layout_weight="1"
             android:gravity="center"
-            android:text="Loading..."
+            android:text="Initialising engine..."
             android:textColor="#888888"
-            android:textSize="16sp"
-            android:visibility="visible" />
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
 
-    </LinearLayout>
+    </FrameLayout>
 
-    <!-- Transport mode selector (between chat area and input) -->
-    <LinearLayout
+    <!-- Transport mode selector (RadioGroup — between chat area and input) -->
+    <RadioGroup
+        android:id="@+id/transportRadioGroup"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingHorizontal="12dp"
-        android:paddingTop="4dp">
+        android:paddingHorizontal="16dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="4dp"
+        android:checkedButton="@+id/rb_sosblue_mesh">
 
-        <com.antor.sosblue.ui.TransportSelectorView
-            android:id="@+id/transportSelector"
+        <RadioButton
+            android:id="@+id/rb_sosblue_mesh"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_gravity="center_vertical" />
+            android:text="SOSBlue Mesh"
+            android:textSize="13sp"
+            android:textColor="#333333"
+            android:buttonTint="#0D80E0"
+            android:checked="true" />
 
-        <TextView
-            android:id="@+id/transportStatusHint"
-            android:layout_width="0dp"
+        <RadioButton
+            android:id="@+id/rb_f2p_serverless"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:gravity="end|center_vertical"
-            android:textSize="11sp"
-            android:singleLine="true"
-            android:ellipsize="end"
-            android:paddingEnd="4dp" />
+            android:text="F2P Serverless"
+            android:textSize="13sp"
+            android:textColor="#333333"
+            android:buttonTint="#0D80E0"
+            android:layout_marginStart="24dp" />
 
-    </LinearLayout>
+    </RadioGroup>
 
     <LinearLayout
         android:id="@+id/replyPreviewContainer"
