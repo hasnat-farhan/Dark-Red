@@ -29,6 +29,9 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
 
+    <!-- Wi-Fi Direct P2P required features (optional — app still works without it) -->
+    <uses-feature android:name="android.hardware.wifi.direct" android:required="false" />
+
     <application
         android:name=".SOSBlueApplication"
         android:allowBackup="true"
@@ -39,13 +42,14 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Dummy_SOSBlue">
+
+        <!-- Main chat / launcher activity -->
         <activity
             android:name=".ChatActivity"
             android:exported="true"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
@@ -58,6 +62,11 @@
         <activity
             android:name=".MainActivity"
             android:exported="false" />
+
+        <!-- Wi-Fi Direct P2P broadcast receiver (self-registered by WifiDirectManager) -->
+        <!-- Note: WifiDirectManager registers this programmatically using IntentFilter
+             on API 26+ (and on older API via registerReceiver).
+             The <receiver> declaration is optional for dynamic registration. -->
     </application>
 
 </manifest>

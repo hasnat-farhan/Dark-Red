@@ -1,7 +1,10 @@
 package com.antor.sosblue;
 
+import android.Manifest;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -13,7 +16,8 @@ import android.widget.EditText;
 import android.widget.ProgressBar;
 import android.widget.RadioGroup;
 import android.widget.TextView;
-import android.widget.Toast;
+
+import com.antor.sosblue.util.ToastUtils;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -21,6 +25,7 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.cardview.widget.CardView;
+import androidx.core.content.ContextCompat;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -45,10 +50,18 @@ import java.util.ArrayList;
 
 public class ChatActivity extends AppCompatActivity {
 
+    /** Intent extra key for pre-filling the recipient phone field (for E2E encryption). */
+    public static final String EXTRA_RECIPIENT_PHONE = "com.antor.sosblue.RECIPIENT_PHONE";
+    /** Intent extra key for the display name shown in the recipient field. */
+    public static final String EXTRA_RECIPIENT_NAME = "com.antor.sosblue.RECIPIENT_NAME";
+
     // Core
     private F2PBridge bridge;
     private boolean engineReady;
     private boolean f2pRequested;
+
+    /** Permission launcher for Wi-Fi/location permissions needed on Android 11 (Oppo). */
+    private ActivityResultLauncher<String[]> wifiPermissionLauncher;
 
     // Chat
     private ChatAdapter chatAdapter;
@@ -85,8 +98,41 @@ public class ChatActivity extends AppCompatActivity {
             return;
         }
 
+        // ── Runtime permission launcher for Wi-Fi/location ──────────
+        // On Android 10-12, ACCESS_FINE_LOCATION is required for Wi-Fi
+        // scanning and Wi-Fi Direct. On Android 13+, NEARBY_WIFI_DEVICES
+        // replaces it and may be auto-granted. Oppo ColorOS on Android
+        // 11 in particular enforces this strictly.
+        wifiPermissionLauncher = registerForActivityResult(
+                new ActivityResultContracts.RequestMultiplePermissions(), result -> {
+                    boolean allGranted = true;
+                    StringBuilder denied = new StringBuilder();
+                    for (java.util.Map.Entry<String, Boolean> entry : result.entrySet()) {
+                        if (!entry.getValue()) {
+                            allGranted = false;
+                            if (denied.length() > 0) denied.append(", ");
+                            denied.append(entry.getKey());
+                        }
+                    }
+                    if (!allGranted) {
+                        Log.w("ChatActivity", "Wi-Fi permissions denied: " + denied);
+                        Snackbar.make(findViewById(R.id.root),
+                                "Wi-Fi permissions needed for peer discovery & mesh",
+                                Snackbar.LENGTH_LONG).show();
+                    } else {
+                        Log.i("ChatActivity", "All Wi-Fi/location permissions granted");
+                    }
+                });
+
         EdgeToEdge.enable(this);
         setContentView(R.layout.activity_chat);
+
+        // ── Request runtime Wi-Fi/location permissions (Android 10-12) ──
+        // On Android 10-12, ACCESS_FINE_LOCATION is required for Wi-Fi
+        // scanning and Wi-Fi Direct discovery. On Android 13+, the
+        // NEARBY_WIFI_DEVICES permission is auto-granted. Oppo ColorOS
+        // on Android 11 crashes if this is not granted at runtime.
+        requestWifiPermissionsIfNeeded();
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.root), (v, insets) -> {
             Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
@@ -155,10 +201,12 @@ public class ChatActivity extends AppCompatActivity {
                     if (senderPhone == null || envelopeB64 == null) return;
 
                     // Decrypt the F2P envelope
+                    // CRITICAL: decrypt with MY phone (recipientPhone from the message),
+                    // because the sender encrypted using the recipient's phone-derived key.
                     byte[] envelopeBytes = Base64.decode(envelopeB64, Base64.NO_WRAP);
                     F2PMessage f2pMsg = F2PMessage.deserialize(envelopeBytes);
                     byte[] decryptedBytes = MessageEncryptor.decrypt(
-                            senderPhone, f2pMsg.getEncryptedPayload());
+                            myPhone, f2pMsg.getEncryptedPayload());
 
                     // ── Check if this is a media chunk ─────────────────
                     String signalType = JsonPayloadHelper.extractField(payloadStr, "transport");
@@ -228,11 +276,24 @@ public class ChatActivity extends AppCompatActivity {
             }
         });
 
-        // Pre-fill recipient with the user's own phone (for self-testing)
-        // Users can change this to any valid E.164 phone number
-        String myPhone = UserIdentity.getPhoneNumber(this);
-        if (myPhone != null && inputRecipientPhone.getText().toString().isEmpty()) {
-            inputRecipientPhone.setText(myPhone);
+        // Pre-fill recipient from Intent extra, or fall back to own phone
+        String recipientFromIntent = getIntent().getStringExtra(EXTRA_RECIPIENT_PHONE);
+        String nameFromIntent = getIntent().getStringExtra(EXTRA_RECIPIENT_NAME);
+        if (recipientFromIntent != null && !recipientFromIntent.isEmpty()) {
+            inputRecipientPhone.setText(recipientFromIntent);
+            String displayName = (nameFromIntent != null) ? nameFromIntent : recipientFromIntent;
+            // Update the title to show the chat partner's name
+            TextView titleView = findViewById(R.id.appTitle);
+            if (titleView != null) {
+                titleView.setText(displayName);
+            }
+            ToastUtils.showShort(this, "Chat with " + displayName);
+        } else {
+            // Fall back to the user's own phone (for self-testing)
+            String myPhone = UserIdentity.getPhoneNumber(this);
+            if (myPhone != null && inputRecipientPhone.getText().toString().isEmpty()) {
+                inputRecipientPhone.setText(myPhone);
+            }
         }
 
         // ---------------------------------------------------------------
@@ -253,7 +314,7 @@ public class ChatActivity extends AppCompatActivity {
         // ---------------------------------------------------------------
 
         peerBarAdapter = new PeerDiscoveryAdapter(new ArrayList<>(), peer -> {
-            Toast.makeText(this, "Chat with " + peer.getName(), Toast.LENGTH_SHORT).show();
+            ToastUtils.showShort(this, "Chat with " + peer.getName());
         });
         peerBarRecyclerView.setLayoutManager(
                 new LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false));
@@ -285,11 +346,11 @@ public class ChatActivity extends AppCompatActivity {
         // ---------------------------------------------------------------
 
         findViewById(R.id.searchIcon).setOnClickListener(v ->
-                Toast.makeText(this, "Search", Toast.LENGTH_SHORT).show());
+                ToastUtils.showShort(this, "Search"));
         findViewById(R.id.discoverIcon).setOnClickListener(v ->
-                Toast.makeText(this, "Discover", Toast.LENGTH_SHORT).show());
+                ToastUtils.showShort(this, "Discover"));
         findViewById(R.id.threeDotIcon).setOnClickListener(v ->
-                Toast.makeText(this, "Menu", Toast.LENGTH_SHORT).show());
+                ToastUtils.showShort(this, "Menu"));
 
         // "Nearby Devices" title → toggle peer bar
         findViewById(R.id.titleContainer).setOnClickListener(v -> {
@@ -402,8 +463,7 @@ public class ChatActivity extends AppCompatActivity {
                         engineReady = true;
                         bufferingProgress.setVisibility(View.GONE);
                         refreshPeerBar();
-                        Toast.makeText(ChatActivity.this,
-                                "F2P Serverless ready", Toast.LENGTH_SHORT).show();
+                        ToastUtils.showShort(ChatActivity.this, "F2P Serverless ready");
                     }
 
                     @Override
@@ -597,6 +657,49 @@ public class ChatActivity extends AppCompatActivity {
      * Renders a local preview immediately, then dispatches the encrypted
      * chunks asynchronously via the F2P bridge.
      */
+    // ---------------------------------------------------------------
+    //  Runtime permission handling (Android 11 / Oppo crash fix)
+    // ---------------------------------------------------------------
+
+    /**
+     * Requests Wi-Fi/location permissions at runtime if not already granted.
+     * <p>
+     * On Android 10-12 (API 29-32), {@code ACCESS_FINE_LOCATION} is required
+     * for Wi-Fi Direct discovery and Wi-Fi scans. On Android 13+ (API 33+),
+     * {@code NEARBY_WIFI_DEVICES} replaces location for nearby device
+     * scanning and is often auto-granted by the system.
+     * </p>
+     * <p>
+     * Oppo ColorOS on Android 11 is particularly strict — without this
+     * runtime grant, {@code WifiP2pManager.discoverPeers()} throws a
+     * {@code SecurityException} and crashes the app.
+     * </p>
+     */
+    private void requestWifiPermissionsIfNeeded() {
+        java.util.List<String> needed = new java.util.ArrayList<>();
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // Android 13+ — NEARBY_WIFI_DEVICES (usually auto-granted)
+            if (ContextCompat.checkSelfPermission(this,
+                    Manifest.permission.NEARBY_WIFI_DEVICES)
+                    != PackageManager.PERMISSION_GRANTED) {
+                needed.add(Manifest.permission.NEARBY_WIFI_DEVICES);
+            }
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // Android 10-12 — need ACCESS_FINE_LOCATION for Wi-Fi scanning
+            if (ContextCompat.checkSelfPermission(this,
+                    Manifest.permission.ACCESS_FINE_LOCATION)
+                    != PackageManager.PERMISSION_GRANTED) {
+                needed.add(Manifest.permission.ACCESS_FINE_LOCATION);
+            }
+        }
+        // Pre-Android 10: location not required for Wi-Fi scanning
+
+        if (!needed.isEmpty()) {
+            wifiPermissionLauncher.launch(needed.toArray(new String[0]));
+        }
+    }
+
     private void onMediaSelected(Uri uri) {
         String recipientPhone = inputRecipientPhone.getText().toString().trim();
         if (recipientPhone.isEmpty() || !MessageEncryptor.isValidE164(recipientPhone)) {
@@ -655,8 +758,7 @@ public class ChatActivity extends AppCompatActivity {
                     @Override
                     public void onComplete(String transferId, byte[] assembledData) {
                         showSendProgress(false);
-                        Toast.makeText(ChatActivity.this,
-                                "Media sent successfully", Toast.LENGTH_SHORT).show();
+                        ToastUtils.showShort(ChatActivity.this, "Media sent successfully");
                     }
 
                     @Override

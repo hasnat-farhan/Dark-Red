@@ -1,5 +1,6 @@
 package com.antor.sosblue;
 
+import android.content.Intent;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
@@ -19,10 +20,12 @@ import com.antor.f2p.engine.api.EngineConfig;
 import com.antor.sosblue.bridge.F2PBridge;
 import com.antor.sosblue.bridge.TransportMode;
 
+import com.antor.sosblue.util.ToastUtils;
 import com.google.android.material.snackbar.Snackbar;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -42,6 +45,11 @@ public class MainActivity extends AppCompatActivity {
     private boolean peerPanelVisible;
     private boolean engineReady;
 
+    /** Cache of real discovered peers (nodeId → PeerDevice). */
+    private final ConcurrentHashMap<String, PeerDevice> discoveredPeers = new ConcurrentHashMap<>();
+    /** Maps peer nodeId → phone number for E2E encryption key derivation. */
+    private final ConcurrentHashMap<String, String> peerPhoneNumbers = new ConcurrentHashMap<>();
+
     // ---------------------------------------------------------------
     //  Lifecycle
     // ---------------------------------------------------------------
@@ -55,9 +63,6 @@ public class MainActivity extends AppCompatActivity {
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
             Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
             Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
-            // Apply system-bar padding (status bar) on top,
-            // and IME (keyboard) inset on bottom so the input bar
-            // always floats above the soft keyboard.
             v.setPadding(
                     systemBars.left,
                     systemBars.top,
@@ -68,6 +73,32 @@ public class MainActivity extends AppCompatActivity {
 
         // Initialise F2P Bridge
         bridge = new F2PBridge(this);
+
+        // ── Register for real peer discovery events ────────────────
+        bridge.addPeerDiscoveryListener(new F2PBridge.PeerDiscoveryListener() {
+            @Override
+            public void onPeerDiscovered(String nodeId, String username, String phone,
+                                          String ipAddress, int port) {
+                String displayName = (username != null && !username.isEmpty()) ? username
+                        : (phone != null ? phone : nodeId);
+                String id = nodeId != null ? nodeId : (phone != null ? phone : "unknown");
+                PeerDevice peer = new PeerDevice(id, displayName, 3, true,
+                        ipAddress, port);
+                discoveredPeers.put(id, peer);
+                // Store phone number separately for E2E encryption key derivation
+                if (phone != null) {
+                    peerPhoneNumbers.put(id, phone);
+                }
+                runOnUiThread(() -> refreshPeerList());
+            }
+
+            @Override
+            public void onPeerLost(String nodeId) {
+                discoveredPeers.remove(nodeId);
+                peerPhoneNumbers.remove(nodeId);
+                runOnUiThread(() -> refreshPeerList());
+            }
+        });
 
         // References
         textStatus = findViewById(R.id.textStatus);
@@ -108,16 +139,16 @@ public class MainActivity extends AppCompatActivity {
         // ---------------------------------------------------------------
 
         findViewById(R.id.searchIcon).setOnClickListener(v ->
-                Toast.makeText(this, "Search", Toast.LENGTH_SHORT).show());
+                ToastUtils.showShort(this, "Search"));
         findViewById(R.id.discoverIcon).setOnClickListener(v ->
-                Toast.makeText(this, "Discover", Toast.LENGTH_SHORT).show());
+                ToastUtils.showShort(this, "Discover"));
         findViewById(R.id.threeDotIcon).setOnClickListener(v ->
-                Toast.makeText(this, "Menu", Toast.LENGTH_SHORT).show());
+                ToastUtils.showShort(this, "Menu"));
         findViewById(R.id.switchInputImage).setOnClickListener(v ->
-                Toast.makeText(this, "Attach file", Toast.LENGTH_SHORT).show());
+                ToastUtils.showShort(this, "Attach file"));
 
         // ---------------------------------------------------------------
-        //  Peer discovery panel
+        //  Peer discovery panel — shows real discovered peers from heartbeats
         // ---------------------------------------------------------------
 
         peerPanel = findViewById(R.id.peerDiscoveryPanel);
@@ -127,7 +158,19 @@ public class MainActivity extends AppCompatActivity {
         Button peerRefreshButton = findViewById(R.id.peerRefreshButton);
 
         peerAdapter = new PeerDiscoveryAdapter(new ArrayList<>(), peer -> {
-            Toast.makeText(this, "Chat with " + peer.getName(), Toast.LENGTH_SHORT).show();
+            // Launch ChatActivity with the selected peer's phone number
+            // (for E2E encryption) and display name (for the chat title).
+            Intent intent = new Intent(MainActivity.this, ChatActivity.class);
+            String peerId = peer.getId();
+            String peerPhone = peerPhoneNumbers.get(peerId);
+            if (peerPhone != null) {
+                intent.putExtra(ChatActivity.EXTRA_RECIPIENT_PHONE, peerPhone);
+            } else {
+                // Fallback: use the peer name (may not work for E2E)
+                intent.putExtra(ChatActivity.EXTRA_RECIPIENT_PHONE, peer.getName());
+            }
+            intent.putExtra(ChatActivity.EXTRA_RECIPIENT_NAME, peer.getName());
+            startActivity(intent);
             peerPanelVisible = false;
             peerPanel.setVisibility(View.GONE);
         });
@@ -201,22 +244,19 @@ public class MainActivity extends AppCompatActivity {
     //  Helpers
     // ---------------------------------------------------------------
 
-    /** Maps a RadioButton ID to the corresponding TransportMode. */
     private static TransportMode radioIdToTransportMode(int radioId) {
         if (radioId == R.id.rb_f2p_serverless) {
             return TransportMode.F2P_SERVERLESS;
         }
-        return TransportMode.SOSBLUE_MESH;  // default
+        return TransportMode.SOSBLUE_MESH;
     }
 
-    /** Shows or hides the full-screen loading overlay. */
     private void showLoading(boolean show) {
         if (textStatus != null) {
             textStatus.setVisibility(show ? View.VISIBLE : View.GONE);
         }
     }
 
-    /** Shows or hides the inline send-progress spinner. */
     private void showSendProgress(boolean show) {
         if (loadingContainer != null) {
             loadingContainer.setVisibility(show ? View.VISIBLE : View.GONE);
@@ -226,7 +266,6 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    /** Scrolls the chat RecyclerView to the very last item. */
     private void scrollChatToBottom() {
         RecyclerView chatList = findViewById(R.id.chatRecyclerView);
         if (chatList != null && chatAdapter != null) {
@@ -238,10 +277,9 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // ---------------------------------------------------------------
-    //  Peer discovery panel
+    //  Peer discovery panel — real discovered peers from UDP heartbeats
     // ---------------------------------------------------------------
 
-    /** Toggles the peer discovery panel visibility. */
     private void showPeerPanel(boolean show) {
         peerPanelVisible = show;
         if (peerPanel != null) {
@@ -249,32 +287,15 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    /** Queries F2PBridge for known peers and updates the list. */
     private void refreshPeerList() {
-        // Gather simulated peers from the bridge's known-peers count
-        int knownCount = 0;
-        int activeCount = 0;
-
-        // engineReady check avoids NPE on routingTable before initialize()
-        if (engineReady) {
-            knownCount = bridge.getKnownPeerCount();
-            activeCount = bridge.getActiveNodeCount();
-        }
-
-        List<PeerDevice> devices = new ArrayList<>();
-        for (int i = 0; i < Math.max(knownCount, 2); i++) {
-            String id = "peer-" + (i + 1) + "-a1b2c3d" + (i + 1);
-            String name = "Device " + (i + 1);
-            int signal = (i % 4) + 1;
-            boolean connected = i < activeCount;
-            devices.add(new PeerDevice(id, name, signal, connected));
-        }
+        List<PeerDevice> devices = new ArrayList<>(discoveredPeers.values());
 
         peerAdapter.updatePeers(devices);
 
         // Update count label + empty hint
-        peerCountLabel.setText(activeCount + " peer(s) online · "
-                + knownCount + " discovered");
+        int activeCount = engineReady ? bridge.getActiveNodeCount() : 0;
+        peerCountLabel.setText(devices.size() + " peer(s) discovered · "
+                + activeCount + " online");
         peerEmptyHint.setVisibility(devices.isEmpty() ? View.VISIBLE : View.GONE);
     }
 
@@ -289,9 +310,7 @@ public class MainActivity extends AppCompatActivity {
                 refreshPeerList();
                 showPeerPanel(true);
             }
-            // else: engine callback will trigger refresh once ready
         } else {
-            // F2P engine stays IDLE until explicitly selected
             showPeerPanel(false);
 
             if (!bridge.isRouting()) {
@@ -300,7 +319,7 @@ public class MainActivity extends AppCompatActivity {
                         Snackbar.LENGTH_LONG);
                 sb.setAction("Switch to Mesh", v -> {
                     transportRadioGroup.check(R.id.rb_sosblue_mesh);
-                    Toast.makeText(this, "Switched to SOSBlue Mesh", Toast.LENGTH_SHORT).show();
+                    ToastUtils.showShort(this, "Switched to SOSBlue Mesh");
                 });
                 sb.show();
             }
@@ -309,7 +328,6 @@ public class MainActivity extends AppCompatActivity {
 
     // ---------------------------------------------------------------
     //  Send message
-    //  Immediately renders locally, then dispatches async
     // ---------------------------------------------------------------
 
     private void sendCurrentMessage() {
@@ -318,18 +336,14 @@ public class MainActivity extends AppCompatActivity {
         ).trim();
         if (messageText.isEmpty()) return;
 
-        // 1. Remove input text immediately
         ((android.widget.EditText) findViewById(R.id.inputMessage)).setText("");
 
-        // 2. Render the outbound message in the chat list immediately
         MessageModel outbound = new MessageModel(messageText, true /* sent */);
         java.util.List<MessageModel> updated = new java.util.ArrayList<>(
                 chatAdapter.getCurrentList());
         updated.add(outbound);
 
         final RecyclerView chatList = findViewById(R.id.chatRecyclerView);
-
-        // One-shot observer: scroll to bottom the moment items are inserted
         final RecyclerView.AdapterDataObserver scrollObserver =
                 new RecyclerView.AdapterDataObserver() {
                     @Override
@@ -341,10 +355,8 @@ public class MainActivity extends AppCompatActivity {
         chatAdapter.registerAdapterDataObserver(scrollObserver);
         chatAdapter.submitList(updated);
 
-        // 3. Show inline progress spinner on the send button
         showSendProgress(true);
 
-        // 4. Dispatch to transport engine asynchronously
         String recipientId = bridge.getLocalNodeId();
         TransportMode mode = radioIdToTransportMode(
                 transportRadioGroup.getCheckedRadioButtonId());

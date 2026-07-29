@@ -5,8 +5,11 @@ import com.antor.f2p.engine.core.FibreEngineStateMachine;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -45,6 +48,7 @@ public class PeerDiscoveryHandler {
     private final int port;
     private final String nodeId;
     private final String phoneNumber;
+    private final String username;
     private final PeerDiscovery peerDiscovery;
 
     private final AtomicBoolean running;
@@ -62,7 +66,7 @@ public class PeerDiscoveryHandler {
      */
     public PeerDiscoveryHandler() {
         this(DEFAULT_HEARTBEAT_INTERVAL_MS, DEFAULT_DISCOVERY_PORT,
-                "unknown", "", null);
+                "unknown", "", "", null);
     }
 
     /**
@@ -78,11 +82,13 @@ public class PeerDiscoveryHandler {
                                  int port,
                                  String nodeId,
                                  String phoneNumber,
+                                 String username,
                                  PeerDiscovery peerDiscovery) {
         this.heartbeatIntervalMs = heartbeatIntervalMs > 0 ? heartbeatIntervalMs : DEFAULT_HEARTBEAT_INTERVAL_MS;
         this.port = port > 0 ? port : DEFAULT_DISCOVERY_PORT;
         this.nodeId = nodeId != null ? nodeId : "unknown";
         this.phoneNumber = phoneNumber != null ? phoneNumber : "";
+        this.username = username != null ? username : "";
         this.peerDiscovery = peerDiscovery;
         this.running = new AtomicBoolean(false);
         this.meshFormed = new AtomicBoolean(false);
@@ -171,6 +177,7 @@ public class PeerDiscoveryHandler {
                     + "\"type\":\"peer_heartbeat\""
                     + ",\"node_id\":\"" + nodeId + "\""
                     + ",\"phone\":\"" + phoneNumber + "\""
+                    + ",\"username\":\"" + username + "\""
                     + ",\"timestamp\":" + System.currentTimeMillis()
                     + "}";
 
@@ -234,6 +241,15 @@ public class PeerDiscoveryHandler {
     private void transitionToMesh() {
         if (stateMachine != null) {
             stateMachine.meshConnected();
+        }
+    }
+
+    /** Closes the send socket if open. */
+    private void closeSendSocket() {
+        if (sendSocket != null && !sendSocket.isClosed()) {
+            sendSocket.close();
+            sendSocket = null;
+            LOG.fine("Discovery send socket closed");
         }
     }
 }

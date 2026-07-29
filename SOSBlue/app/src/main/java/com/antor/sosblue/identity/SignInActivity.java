@@ -11,6 +11,7 @@ import androidx.appcompat.app.AppCompatActivity;
 
 import com.antor.sosblue.ChatActivity;
 import com.antor.sosblue.R;
+import com.antor.sosblue.util.ToastUtils;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.textfield.TextInputEditText;
 
@@ -82,7 +83,7 @@ public class SignInActivity extends AppCompatActivity {
         // Persist identity
         UserIdentity.save(this, username, phone);
 
-        Toast.makeText(this, "Welcome, " + username + "!", Toast.LENGTH_SHORT).show();
+        ToastUtils.showShort(this, "Welcome, " + username + "!");
         launchChat();
         finish();
     }

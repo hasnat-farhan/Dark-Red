@@ -47,11 +47,39 @@ public final class MessageEncryptor {
     /**
      * Derives an AES-256 key from a phone number using SHA-256.
      *
-     * @param phoneNumber the phone number in E.164 format
+     * <p><strong>Key-derivation normalization:</strong> The leading {@code '+'}
+     * is stripped before hashing so that both {@code "+8801712345678"} and
+     * {@code "8801712345678"} produce the same key. This guarantees the sender
+     * (who encrypts with the <em>recipient</em> phone) and the receiver (who
+     * decrypts with their <em>own</em> phone) compute identical keys even when
+     * one side includes the leading {@code '+'} and the other does not.</p>
+     *
+     * @param phoneNumber the phone number (E.164 format, with or without leading '+')
      * @return AES secret key specification
      */
     public static SecretKeySpec deriveKey(String phoneNumber) {
-        return keyCache.computeIfAbsent(phoneNumber, phone -> {
+        if (phoneNumber == null) {
+            throw new NullPointerException("phoneNumber must not be null");
+        }
+
+        // ── Normalize: strip all non-digit chars except leading '+' ──
+        // This mirrors UserIdentity.normalizePhoneNumber() to handle any
+        // formatted input (spaces, dashes, parentheses, dots) that may
+        // bypass the normalizer and still produce a consistent SHA-256 key.
+        String normalized;
+        if (phoneNumber.startsWith("+")) {
+            // Keep the leading '+', strip everything else that is not a digit
+            normalized = "+" + phoneNumber.substring(1).replaceAll("[^\\d]", "");
+        } else {
+            normalized = phoneNumber.replaceAll("[^\\d]", "");
+        }
+
+        // Strip leading '+' for SHA-256 hashing so both
+        // "+8801712345678" and "8801712345678" derive the exact same key.
+        // The cache key is the cleaned (stripped) form.
+        String cleanPhone = normalized.startsWith("+") ? normalized.substring(1) : normalized;
+
+        return keyCache.computeIfAbsent(cleanPhone, phone -> {
             try {
                 MessageDigest md = MessageDigest.getInstance("SHA-256");
                 byte[] hash = md.digest(phone.getBytes(StandardCharsets.UTF_8));
@@ -110,13 +138,19 @@ public final class MessageEncryptor {
     /**
      * Decrypts a payload that was encrypted with {@link #encrypt}.
      *
-     * @param senderPhone    the sender's phone number (used as key context)
-     * @param ciphertextWithIv encrypted payload: {@code [IV (12)] [ciphertext] [GCM tag]}
+     * <p><strong>Critical:</strong> Pass the phone number whose key was used to
+     * <em>encrypt</em>. Since the sender encrypts with the <strong>recipient's</strong>
+     * phone number, the receiver must pass their <strong>own</strong> registered
+     * phone number (the {@code recipientPhone} from the message).</p>
+     *
+     * @param phoneForDerivation the phone whose key was used to encrypt
+     *                           (the <em>recipient</em> phone, i.e. the local user)
+     * @param ciphertextWithIv   encrypted payload: {@code [IV (12)] [ciphertext] [GCM tag]}
      * @return decrypted plaintext bytes
      * @throws Exception if decryption fails (wrong key, tampered data, etc.)
      */
-    public static byte[] decrypt(String senderPhone, byte[] ciphertextWithIv) throws Exception {
-        SecretKeySpec key = deriveKey(senderPhone);
+    public static byte[] decrypt(String phoneForDerivation, byte[] ciphertextWithIv) throws Exception {
+        SecretKeySpec key = deriveKey(phoneForDerivation);
         ByteBuffer buf = ByteBuffer.wrap(ciphertextWithIv);
 
         byte[] iv = new byte[IV_LENGTH];
@@ -134,14 +168,14 @@ public final class MessageEncryptor {
     /**
      * Decrypts a payload and returns it as a UTF-8 string.
      *
-     * @param senderPhone    the sender's phone number
-     * @param ciphertextWithIv encrypted payload
+     * @param phoneForDerivation the phone whose key was used to encrypt
+     * @param ciphertextWithIv   encrypted payload
      * @return decrypted message text
      * @throws Exception if decryption fails
      */
-    public static String decryptAsString(String senderPhone, byte[] ciphertextWithIv)
+    public static String decryptAsString(String phoneForDerivation, byte[] ciphertextWithIv)
             throws Exception {
-        return new String(decrypt(senderPhone, ciphertextWithIv), StandardCharsets.UTF_8);
+        return new String(decrypt(phoneForDerivation, ciphertextWithIv), StandardCharsets.UTF_8);
     }
 
     // ---------------------------------------------------------------
