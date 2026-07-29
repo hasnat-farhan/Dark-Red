@@ -26,6 +26,22 @@ android {
         sourceCompatibility JavaVersion.VERSION_11
         targetCompatibility JavaVersion.VERSION_11
     }
+
+    // Include f2p-serverless / Wandering Fibre Engine source sets
+    sourceSets {
+        main {
+            java.srcDirs += [
+                    '../../f2p-serverless/wandering-fibre-engine/api',
+                    '../../f2p-serverless/wandering-fibre-engine/core',
+                    '../../f2p-serverless/wandering-fibre-engine/network'
+            ]
+        }
+        test {
+            java.srcDirs += [
+                    '../../f2p-serverless/wandering-fibre-engine/test'
+            ]
+        }
+    }
 }
 
 dependencies {

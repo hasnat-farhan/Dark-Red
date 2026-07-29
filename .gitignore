@@ -1,4 +1,18 @@
+# Root-level .gitignore for the Dark-Red project
+# Engine-specific artifacts are covered by f2p-serverless/.gitignore
+
 # Puku AI editor
 .puku/
 
+# IDE
+.idea/
+*.iml
+.vscode/
 
+# OS
+.DS_Store
+Thumbs.db
+
+# Gradle (local, not checked in)
+.gradle/
+local.properties
