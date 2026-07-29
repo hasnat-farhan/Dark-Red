@@ -1,5 +1,8 @@
 package com.antor.sosblue.bridge;
 
+import android.app.Application;
+import android.content.Context;
+import android.util.Base64;
 import android.util.Log;
 
 import com.antor.f2p.engine.api.EngineCallback;
@@ -10,11 +13,19 @@ import com.antor.f2p.engine.api.FibreSignal;
 import com.antor.f2p.engine.api.LogLevel;
 import com.antor.f2p.engine.api.MeshHealthSnapshot;
 import com.antor.f2p.engine.api.WanderingFibreEngine;
+import com.antor.f2p.engine.network.PeerDiscoveryHandler;
 
+import com.antor.sosblue.identity.F2PMessage;
+import com.antor.sosblue.identity.MessageEncryptor;
+import com.antor.sosblue.identity.UserIdentity;
+
+import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Production-ready bridge adapter that integrates the Wandering Fibre Engine
@@ -43,11 +54,21 @@ public class F2PBridge {
     private final AtomicBoolean started;
     private final ExecutorService executor;
 
+    /** Application context — avoids hidden API ActivityThread.currentApplication(). */
+    private final Context appContext;
+
+    /** UDP mesh manager for local Wi-Fi broadcast / receive. */
+    private UdpMeshManager udpMeshManager;
+
+    /** Packet counter for logging. */
+    private final AtomicInteger packetSequence;
+
     /** Error-boundary status code: last non-fatal error or 0 if healthy. */
     private volatile int lastStatusCode;
     private volatile String lastStatusMessage;
 
-    public F2PBridge() {
+    public F2PBridge(Context context) {
+        this.appContext = context.getApplicationContext();
         this.engine = new WanderingFibreEngine();
         this.started = new AtomicBoolean(false);
         this.executor = Executors.newSingleThreadExecutor(r -> {
@@ -57,6 +78,7 @@ public class F2PBridge {
         });
         this.lastStatusCode = 0;
         this.lastStatusMessage = "OK";
+        this.packetSequence = new AtomicInteger(0);
     }
 
     // ---------------------------------------------------------------
@@ -82,6 +104,16 @@ public class F2PBridge {
         if (config != null) {
             engine.configure(config);
         }
+
+        // ── Wire up real UDP PeerDiscoveryHandler ─────────────────────
+        // Replace the default mock with one that sends real UDP heartbeats
+        PeerDiscoveryHandler realHandler = createDiscoveryHandler(config);
+        if (realHandler != null) {
+            engine.setPeerDiscoveryHandler(realHandler);
+        }
+
+        // ── Start UDP mesh manager (for receiving) ────────────────────
+        startUdpMesh();
 
         // Register the default logging listener
         engine.registerListener(new EngineCallback() {
@@ -127,6 +159,8 @@ public class F2PBridge {
         try {
             engine.initialize();
             Log.i(TAG, "Wandering Fibre Engine started successfully");
+            Log.i(TAG, "Mesh UDP listener active on port "
+                    + (udpMeshManager != null ? udpMeshManager.getPort() : "N/A"));
         } catch (Exception e) {
             Log.e(TAG, "Failed to start engine", e);
             lastStatusCode = 1;
@@ -140,6 +174,8 @@ public class F2PBridge {
      */
     public synchronized void stopEngine() {
         if (!started.getAndSet(false)) return;
+        // ── Stop UDP mesh first ─────────────────────────────────────
+        stopUdpMesh();
         try {
             engine.shutdown();
             executor.shutdownNow();
@@ -148,6 +184,47 @@ public class F2PBridge {
             Log.e(TAG, "Error during engine shutdown", e);
             lastStatusCode = 2;
             lastStatusMessage = "Shutdown error: " + e.getMessage();
+        }
+    }
+
+    // ---------------------------------------------------------------
+    //  Real UDP PeerDiscoveryHandler factory
+    // ---------------------------------------------------------------
+
+    /**
+     * Creates a real UDP {@link PeerDiscoveryHandler} that broadcasts
+     * heartbeat beacons on the same port as the UdpMeshManager.
+     * Returns null if essential identity information is missing.
+     */
+    @androidx.annotation.Nullable
+    private PeerDiscoveryHandler createDiscoveryHandler(EngineConfig config) {
+        try {
+            String localPhone = UserIdentity.getPhoneNumber(appContext);
+            String nodeId = config != null ? config.getNodeId() : engine.getLocalNodeId();
+
+            if (nodeId == null) {
+                Log.w(TAG, "Cannot create real PeerDiscoveryHandler — nodeId is null");
+                return null;
+            }
+
+            int discoveryPort = config != null ? config.getDiscoveryPort()
+                    : com.antor.sosblue.bridge.UdpMeshManager.DEFAULT_PORT;
+            int intervalMs = config != null ? config.getHeartbeatIntervalMs() : 3000;
+
+            PeerDiscoveryHandler handler = new PeerDiscoveryHandler(
+                    intervalMs,
+                    discoveryPort,
+                    nodeId,
+                    localPhone != null ? localPhone : "",
+                    engine.getPeerDiscovery()
+            );
+
+            Log.i(TAG, "Real UDP PeerDiscoveryHandler created (port=" + discoveryPort
+                    + ", interval=" + intervalMs + "ms, node=" + nodeId + ")");
+            return handler;
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to create PeerDiscoveryHandler", e);
+            return null;
         }
     }
 
@@ -241,8 +318,148 @@ public class F2PBridge {
     }
 
     // ---------------------------------------------------------------
-    //  Signal dispatch
+    //  UDP Mesh Management
     // ---------------------------------------------------------------
+
+    /** Starts the UDP mesh manager and registers the packet callback. */
+    private void startUdpMesh() {
+        try {
+            udpMeshManager = new UdpMeshManager(appContext);
+            udpMeshManager.start((payloadJson, sourceAddress, sourcePort) -> {
+                int seq = packetSequence.incrementAndGet();
+                Log.d(TAG, "[" + seq + "] UDP packet received from "
+                        + sourceAddress + ":" + sourcePort + " ("
+                        + payloadJson.length() + " chars)");
+
+                try {
+                    // ── Check if this is a peer heartbeat ────────────────
+                    // NOTE: Message deduplication is handled by
+                    // FibreProcessor.processInboundPacket() which is the single
+                    // chokepoint where ALL packets converge (direct UDP + relay).
+                    // We do NOT deduplicate here because it would prevent the
+                    // TTL relay from working correctly.
+                    String packetType = com.antor.sosblue.identity.JsonPayloadHelper
+                            .extractField(payloadJson, "type");
+
+                    if ("peer_heartbeat".equals(packetType)) {
+                        String peerNodeId = com.antor.sosblue.identity.JsonPayloadHelper
+                                .extractField(payloadJson, "node_id");
+                        String peerPhone = com.antor.sosblue.identity.JsonPayloadHelper
+                                .extractField(payloadJson, "phone");
+
+                        if (peerNodeId != null) {
+                            String endpoint = sourceAddress + ":" + sourcePort;
+                            Log.d(TAG, "[" + seq + "] Heartbeat from node="
+                                    + peerNodeId + ", phone=" + peerPhone
+                                    + " @ " + endpoint);
+
+                            // Ignore our own heartbeats
+                            String localPhone = UserIdentity.getPhoneNumber(appContext);
+                            String normalizedLocal = UserIdentity.normalizePhoneNumber(localPhone);
+                            String normalizedPeer = UserIdentity.normalizePhoneNumber(peerPhone);
+                            if (normalizedLocal != null && normalizedLocal.equals(normalizedPeer)) {
+                                Log.v(TAG, "[" + seq + "] Ignoring our own heartbeat");
+                                return;
+                            }
+
+                            // Register peer via the engine's handler
+                            engine.getPeerDiscoveryHandler().onHeartbeatReceived(
+                                    peerNodeId, endpoint);
+                            Log.i(TAG, "[" + seq + "] Peer discovered: " + peerNodeId);
+                        } else {
+                            Log.w(TAG, "[" + seq + "] Heartbeat missing node_id");
+                        }
+                        return;
+                    }
+
+                    // ── Parse received JSON fields and rebuild proper signal ──
+                    String recipientPhone = com.antor.sosblue.identity.JsonPayloadHelper
+                            .extractField(payloadJson, "recipient_phone");
+                    String senderPhone = com.antor.sosblue.identity.JsonPayloadHelper
+                            .extractField(payloadJson, "sender_phone");
+                    String envelopeB64 = com.antor.sosblue.identity.JsonPayloadHelper
+                            .extractField(payloadJson, "f2p_envelope");
+                    String transport = com.antor.sosblue.identity.JsonPayloadHelper
+                            .extractField(payloadJson, "transport");
+
+                    // ── Ignore our own broadcasts to prevent self-loop ──
+                    // Since UDP sockets receive their own broadcasts, we must
+                    // filter out messages where the sender matches our phone.
+                    if (senderPhone != null) {
+                        String localPhone = UserIdentity.getPhoneNumber(appContext);
+                        String normalizedLocal = UserIdentity.normalizePhoneNumber(localPhone);
+                        String normalizedSender = UserIdentity.normalizePhoneNumber(senderPhone);
+                        if (normalizedLocal != null && normalizedLocal.equals(normalizedSender)) {
+                            Log.v(TAG, "[" + seq + "] Ignoring our own broadcast");
+                            return;
+                        }
+                    }
+
+                    if (recipientPhone != null && envelopeB64 != null) {
+                        HashMap<String, Object> fields = new HashMap<>();
+                        fields.put("_destination", recipientPhone);
+                        fields.put("sender_phone", senderPhone != null ? senderPhone : "");
+                        fields.put("recipient_phone", recipientPhone);
+                        fields.put("f2p_envelope", envelopeB64);
+                        fields.put("transport", transport != null ? transport : "f2p");
+
+                        // ── Also include media chunk fields if present ──
+                        String transferId = com.antor.sosblue.identity.JsonPayloadHelper
+                                .extractField(payloadJson, "transfer_id");
+                        if (transferId != null) {
+                            fields.put("transfer_id", transferId);
+                            fields.put("chunk_index",
+                                    com.antor.sosblue.identity.JsonPayloadHelper
+                                            .extractField(payloadJson, "chunk_index"));
+                            fields.put("total_chunks",
+                                    com.antor.sosblue.identity.JsonPayloadHelper
+                                            .extractField(payloadJson, "total_chunks"));
+                            fields.put("file_name",
+                                    com.antor.sosblue.identity.JsonPayloadHelper
+                                            .extractField(payloadJson, "file_name"));
+                            fields.put("mime_type",
+                                    com.antor.sosblue.identity.JsonPayloadHelper
+                                            .extractField(payloadJson, "mime_type"));
+                            fields.put("content_type",
+                                    com.antor.sosblue.identity.JsonPayloadHelper
+                                            .extractField(payloadJson, "content_type"));
+                            fields.put("caption",
+                                    com.antor.sosblue.identity.JsonPayloadHelper
+                                            .extractField(payloadJson, "caption"));
+                            Log.d(TAG, "[" + seq + "] Incoming media chunk for transfer "
+                                    + transferId);
+                        }
+
+                        engine.dispatchSignal("chat_message", fields);
+                        Log.d(TAG, "[" + seq + "] Dispatched as chat_message to "
+                                + recipientPhone);
+                    } else {
+                        Log.w(TAG, "[" + seq + "] Received UDP packet missing"
+                                + " recipient_phone or f2p_envelope — dropping");
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "[" + seq + "] Failed to process incoming UDP packet", e);
+                }
+            });
+            Log.i(TAG, "UDP mesh started on port " + udpMeshManager.getPort());
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to start UDP mesh", e);
+            udpMeshManager = null;
+        }
+    }
+
+    /** Stops the UDP mesh manager if running. */
+    private void stopUdpMesh() {
+        if (udpMeshManager != null) {
+            udpMeshManager.stop();
+            udpMeshManager = null;
+            Log.d(TAG, "UDP mesh stopped");
+        }
+    }
+
+    // ---------------------------------------------------------------
+    //  Signal dispatch
+  // ---------------------------------------------------------------
 
     public void dispatchSignal(String type, Map<String, Object> payload) {
         engine.dispatchSignal(type, payload);
@@ -258,9 +475,14 @@ public class F2PBridge {
 
     /**
      * Routes a message through the selected transport mode.
+     * <p>
+     * For F2P_SERVERLESS mode, the message is encrypted using the recipient's
+     * phone-derived key and wrapped in an {@link F2PMessage} envelope with
+     * sender/recipient phone numbers for targeted routing.
+     * </p>
      *
      * @param messageText  the text to send
-     * @param recipientId  destination node ID
+     * @param recipientId  destination node ID (phone number for F2P mode)
      * @param selectedMode which transport to use (SOSBLUE_MESH or F2P_SERVERLESS)
      * @return {@code true} if the message was accepted for dispatch
      */
@@ -280,12 +502,62 @@ public class F2PBridge {
                 if (!isRouting()) {
                     Log.w(TAG, "F2P_SERVERLESS selected but engine not routing — queuing offline");
                 }
+
+                // ── F2P Identity & Encryption ────────────────────────
+                // Encrypt the message payload using the recipient's phone-derived key
+                String senderPhone = UserIdentity.getPhoneNumber(appContext);
+                String recipientPhone = UserIdentity.normalizePhoneNumber(recipientId);
+
+                if (senderPhone == null || recipientPhone == null) {
+                    Log.e(TAG, "Cannot encrypt — sender or recipient phone is null");
+                    return false;
+                }
+
+                Log.d(TAG, "Sending F2P message: sender=" + senderPhone
+                        + ", recipient=" + recipientPhone
+                        + ", normalized=" + recipientPhone);
+
+                // Encrypt the plaintext with recipient's phone-derived key
+                byte[] encryptedPayload = MessageEncryptor.encrypt(recipientPhone, messageText);
+                byte[] nonce = MessageEncryptor.generateNonce();
+
+                // Build the F2P message envelope
+                F2PMessage f2pMsg = new F2PMessage(
+                        senderPhone,
+                        recipientPhone,
+                        encryptedPayload,
+                        System.currentTimeMillis(),
+                        nonce
+                );
+
+                // ── Generate a globally unique message ID ─────────────
+                // This ID travels with the payload both through the engine
+                // (in the signal) and over UDP (in the broadcast JSON).
+                // Receiving devices use it to deduplicate across paths.
+                String messageId = UUID.randomUUID().toString();
+
+                // Pack the envelope into a signal for the engine
+                // The _destination key tells FibreProcessor where to route
+                // Build the JSON payload string for direct UDP broadcast
+                String jsonPayload = buildF2pPayload(senderPhone, recipientPhone, f2pMsg, messageId);
+
                 dispatchSignal("chat_message", Map.of(
-                        "recipient", recipientId,
-                        "text", messageText,
-                        "transport", "f2p"
+                        "_destination", recipientPhone,
+                        "sender_phone", senderPhone,
+                        "recipient_phone", recipientPhone,
+                        "f2p_envelope", Base64.encodeToString(f2pMsg.serialize(), Base64.NO_WRAP),
+                        "transport", "f2p",
+                        "ttl", "3",
+                        "message_id", messageId
                 ));
-                Log.d(TAG, "sendMessage → F2P_SERVERLESS to " + recipientId);
+
+                // ── Also broadcast over local UDP mesh ─────────────────
+                if (udpMeshManager != null && udpMeshManager.isRunning()) {
+                    udpMeshManager.broadcast(jsonPayload);
+                    Log.d(TAG, "Message also broadcast via UDP mesh");
+                }
+
+                Log.d(TAG, "sendMessage → F2P_SERVERLESS (encrypted) to " + recipientPhone);
                 return true;
             }
             default:
@@ -298,18 +570,208 @@ public class F2PBridge {
     // ---------------------------------------------------------------
 
     /**
-     * Sends a message on the background executor and invokes {@code onComplete}
-     * on the main thread when the dispatch finishes.
+     * Callback for async message send operations, providing success/failure
+     * feedback so the UI can react accordingly (hide spinner, show errors).
+     */
+    public interface OnMessageSendListener {
+        /** Invoked on the <b>main thread</b> when the message was accepted. */
+        void onSent();
+        /** Invoked on the <b>main thread</b> when the message could not be sent. */
+        void onSendFailed(String reason);
+    }
+
+    /**
+     * Sends a message on the background executor and invokes the appropriate
+     * listener callback on the main thread depending on success or failure.
      */
     public void sendMessageAsync(String messageText, String recipientId,
                                   TransportMode selectedMode,
-                                  @androidx.annotation.Nullable Runnable onComplete) {
+                                  @androidx.annotation.Nullable OnMessageSendListener listener) {
         executor.execute(() -> {
-            sendMessage(messageText, recipientId, selectedMode);
-            if (onComplete != null) {
-                new android.os.Handler(android.os.Looper.getMainLooper()).post(onComplete);
+            boolean success = false;
+            String errorReason = "Unknown error";
+            try {
+                success = sendMessage(messageText, recipientId, selectedMode);
+                if (!success) {
+                    errorReason = "Sender or recipient phone number is missing";
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "sendMessage failed", e);
+                errorReason = e.getMessage() != null ? e.getMessage() : "Send failed: " + e.getClass().getSimpleName();
+            }
+            final boolean result = success;
+            final String reason = errorReason;
+            if (listener != null) {
+                new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+                    if (result) {
+                        listener.onSent();
+                    } else {
+                        listener.onSendFailed(reason);
+                    }
+                });
             }
         });
+    }
+
+    // ---------------------------------------------------------------
+    //  Multi-Transport sendMedia (async, chunked)
+    // ---------------------------------------------------------------
+
+    /**
+     * Sends a media file (image/video) through the mesh, splitting it
+     * into encrypted chunks and dispatching each sequentially.
+     *
+     * @param context      Android context for URI access
+     * @param mediaUri     content URI of the media file
+     * @param recipientId  destination phone number (F2P mode)
+     * @param selectedMode transport mode
+     * @param caption      optional text caption (can be empty)
+     * @param listener     progress/completion callback (main thread)
+     */
+    public void sendMediaAsync(android.content.Context context,
+                                android.net.Uri mediaUri,
+                                String recipientId,
+                                TransportMode selectedMode,
+                                String caption,
+                                @androidx.annotation.Nullable com.antor.sosblue.media.MediaTransferListener listener) {
+        executor.execute(() -> {
+            try {
+                String senderPhone = UserIdentity.getPhoneNumber(appContext);
+                String normalizedRecipient = UserIdentity.normalizePhoneNumber(recipientId);
+                if (senderPhone == null || normalizedRecipient == null) {
+                    postFailed(listener, "", "Sender or recipient phone is null");
+                    return;
+                }
+
+                Log.d(TAG, "sendMediaAsync: sender=" + senderPhone
+                        + ", recipient=" + normalizedRecipient);
+
+                // Resolve file metadata
+                String fileName = com.antor.sosblue.media.MediaChunker.getFileName(context, mediaUri);
+                String mimeType = context.getContentResolver().getType(mediaUri);
+                if (mimeType == null) mimeType = "application/octet-stream";
+
+                boolean isVideo = mimeType.startsWith("video/");
+                boolean isImage = mimeType.startsWith("image/");
+                int contentType = isVideo ? com.antor.sosblue.MessageModel.TYPE_VIDEO
+                        : isImage ? com.antor.sosblue.MessageModel.TYPE_IMAGE
+                        : com.antor.sosblue.MessageModel.TYPE_TEXT;
+
+                // Split file into chunks
+                com.antor.sosblue.media.MediaChunker.MediaChunk[] chunks =
+                        com.antor.sosblue.media.MediaChunker.split(context, mediaUri, fileName, mimeType);
+
+                if (chunks.length == 0) {
+                    postFailed(listener, "", "Failed to read media file");
+                    return;
+                }
+
+                String transferId = chunks[0].transferId;
+
+                // Dispatch each chunk as an encrypted F2P signal
+                for (int i = 0; i < chunks.length; i++) {
+                    com.antor.sosblue.media.MediaChunker.MediaChunk chunk = chunks[i];
+
+                    // Encrypt the chunk data
+                    byte[] encryptedChunk = MessageEncryptor.encrypt(normalizedRecipient, chunk.data);
+                    byte[] nonce = MessageEncryptor.generateNonce();
+
+                    // Build the F2P media envelope
+                    F2PMessage f2pMsg = new F2PMessage(
+                            senderPhone, normalizedRecipient, encryptedChunk,
+                            System.currentTimeMillis(), nonce
+                    );
+
+                    dispatchSignal("media_chunk", Map.ofEntries(
+                            Map.entry("_destination", normalizedRecipient),
+                            Map.entry("sender_phone", senderPhone),
+                            Map.entry("recipient_phone", normalizedRecipient),
+                            Map.entry("f2p_envelope", Base64.encodeToString(f2pMsg.serialize(), Base64.NO_WRAP)),
+                            Map.entry("transfer_id", transferId),
+                            Map.entry("chunk_index", String.valueOf(chunk.chunkIndex)),
+                            Map.entry("total_chunks", String.valueOf(chunk.totalChunks)),
+                            Map.entry("file_name", chunk.fileName),
+                            Map.entry("mime_type", chunk.mimeType),
+                            Map.entry("content_type", String.valueOf(contentType)),
+                            Map.entry("caption", caption != null ? caption : ""),
+                            Map.entry("transport", "f2p")
+                    ));
+
+                    // Report progress
+                    final int sent = i + 1;
+                    final String tid = transferId;
+                    final int total = chunks.length;
+                    if (listener != null) {
+                        new android.os.Handler(android.os.Looper.getMainLooper()).post(
+                                () -> listener.onProgress(tid, sent, total));
+                    }
+
+                    Log.d(TAG, "Media chunk " + sent + "/" + total + " sent for " + fileName);
+                }
+
+                // Report completion
+                if (listener != null) {
+                    new android.os.Handler(android.os.Looper.getMainLooper()).post(
+                            () -> listener.onComplete(transferId, null));
+                }
+
+                Log.d(TAG, "Media send complete: " + fileName + " (" + chunks.length + " chunks)");
+
+            } catch (Exception e) {
+                Log.e(TAG, "sendMedia failed", e);
+                postFailed(listener, "", e.getMessage() != null ? e.getMessage() : "Media send failed");
+            }
+        });
+    }
+
+    private void postFailed(@androidx.annotation.Nullable com.antor.sosblue.media.MediaTransferListener listener,
+                             String transferId, String reason) {
+        if (listener != null) {
+            new android.os.Handler(android.os.Looper.getMainLooper()).post(
+                    () -> listener.onFailed(transferId, reason));
+        }
+    }
+
+    // ---------------------------------------------------------------
+    //  F2P Payload Helper
+    // ---------------------------------------------------------------
+
+    /**
+     * Builds a JSON payload string suitable for UDP broadcast.
+     * Contains all the fields needed by the receiving device to
+     * decrypt and deliver the message.
+     */
+    private static String buildF2pPayload(String senderPhone, String recipientPhone,
+                                           F2PMessage f2pMsg, String messageId) {
+        String envelopeB64 = Base64.encodeToString(f2pMsg.serialize(), Base64.NO_WRAP);
+        return "{"
+                + "\"sender_phone\":\"" + senderPhone + "\""
+                + ",\"recipient_phone\":\"" + recipientPhone + "\""
+                + ",\"f2p_envelope\":\"" + envelopeB64 + "\""
+                + ",\"transport\":\"f2p\""
+                + ",\"ttl\":\"3\""
+                + ",\"message_id\":\"" + messageId + "\""
+                + "}";
+    }
+
+    // ---------------------------------------------------------------
+    //  F2P Identity helpers
+    // ---------------------------------------------------------------
+
+    /**
+     * Returns the local user's phone number (unique peer identifier).
+     */
+    @androidx.annotation.Nullable
+    public String getLocalPhoneNumber() {
+        return UserIdentity.getPhoneNumber(appContext);
+    }
+
+    /**
+     * Returns the local user's display name.
+     */
+    @androidx.annotation.Nullable
+    public String getLocalUsername() {
+        return UserIdentity.getUsername(appContext);
     }
 
     // ---------------------------------------------------------------

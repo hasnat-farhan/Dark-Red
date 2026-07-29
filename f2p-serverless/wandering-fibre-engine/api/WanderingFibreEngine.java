@@ -5,6 +5,7 @@ import com.antor.f2p.engine.core.FibreEngineStateMachine;
 import com.antor.f2p.engine.core.FibreLogger;
 import com.antor.f2p.engine.core.FibreSecurityHandler;
 import com.antor.f2p.engine.core.FibreStore;
+import com.antor.f2p.engine.core.MessageDeduplicator;
 import com.antor.f2p.engine.core.StateMachine;
 import com.antor.f2p.engine.network.PeerDiscovery;
 import com.antor.f2p.engine.network.PeerDiscoveryHandler;
@@ -39,11 +40,12 @@ public class WanderingFibreEngine {
     private final FibreEngineStateMachine fibreEngineStateMachine;
     private final EngineLoop engineLoop;
     private final PeerDiscovery peerDiscovery;
-    private final PeerDiscoveryHandler peerDiscoveryHandler;
+    private PeerDiscoveryHandler peerDiscoveryHandler;
     private RoutingTable routingTable;
     private final FibreSecurityHandler securityHandler;
     private final FibreStore fibreStore;
     private final FibreLogger fibreLogger;
+    private final MessageDeduplicator messageDeduplicator;
 
     private volatile String localNodeId;
     private final AtomicBoolean paused;
@@ -60,6 +62,7 @@ public class WanderingFibreEngine {
         this.securityHandler = new FibreSecurityHandler();
         this.fibreStore = new FibreStore();
         this.fibreLogger = FibreLogger.get();
+        this.messageDeduplicator = new MessageDeduplicator();
         this.engineLoop = new EngineLoop(this);
         this.paused = new AtomicBoolean(false);
     }
@@ -76,6 +79,28 @@ public class WanderingFibreEngine {
         if (state.get() != EngineState.UNINITIALIZED) return;
         localNodeId = config.getNodeId();
         fibreLogger.setLevel(config.getLogLevel());
+    }
+
+    /**
+     * Replaces the default PeerDiscoveryHandler with one configured for
+     * real UDP discovery. Must be called BEFORE {@link #initialize()}.
+     *
+     * @param handler a pre-configured PeerDiscoveryHandler (real UDP)
+     */
+    public synchronized void setPeerDiscoveryHandler(PeerDiscoveryHandler handler) {
+        if (state.get() != EngineState.UNINITIALIZED) {
+            throw new IllegalStateException(
+                    "Cannot replace PeerDiscoveryHandler after initialisation");
+        }
+        this.peerDiscoveryHandler = handler;
+    }
+
+    /**
+     * Returns the current PeerDiscoveryHandler so callers can inject
+     * received heartbeats.
+     */
+    public PeerDiscoveryHandler getPeerDiscoveryHandler() {
+        return peerDiscoveryHandler;
     }
 
     public synchronized void initialize() {
@@ -124,6 +149,7 @@ public class WanderingFibreEngine {
 
         fibreEngineStateMachine.discoverPeers();
         peerDiscovery.initialize();
+        messageDeduplicator.start();
 
         routingTable.onTopologyChange(() ->
                 fibreLogger.debug("Topology change detected"));
@@ -139,6 +165,7 @@ public class WanderingFibreEngine {
         if (current == EngineState.UNINITIALIZED) return;
 
         peerDiscoveryHandler.stop();
+        messageDeduplicator.stop();
         engineLoop.stop();
         routingTable.clear();
         securityHandler.clearAllSessions();
@@ -283,6 +310,7 @@ public class WanderingFibreEngine {
     public PeerDiscovery getPeerDiscovery()         { return peerDiscovery; }
     public FibreStore getFibreStore()               { return fibreStore; }
     public FibreLogger getFibreLogger()              { return fibreLogger; }
+    public MessageDeduplicator getMessageDeduplicator() { return messageDeduplicator; }
     public String getLocalNodeId()                  { return localNodeId; }
     public void setLocalNodeId(String id)           { this.localNodeId = id; }
     StateMachine getStateMachine()                  { return stateMachine; }

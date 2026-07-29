@@ -5,8 +5,8 @@
     android:id="@+id/main"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#F5F5F5"
-    android:fitsSystemWindows="true"
+    android:background="@color/chat_background"
+    android:fitsSystemWindows="false"
     android:orientation="vertical"
     tools:context=".MainActivity">
 
@@ -15,15 +15,14 @@
         android:id="@+id/topBar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@drawable/bg_white_round_bottom"
-        android:clipToOutline="false"
-        android:gravity="center_vertical|center_horizontal"
+        android:background="@color/top_bar_background"
+        android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingStart="12dp"
         android:paddingTop="4dp"
         android:paddingEnd="4dp"
         android:paddingBottom="8dp"
-        android:translationZ="2dp">
+        android:elevation="2dp">
 
 
         <FrameLayout
@@ -70,7 +69,7 @@
                 android:paddingBottom="6dp"
                 android:singleLine="true"
                 android:text="Nearby Chat"
-                android:textColor="#756A6A"
+                android:textColor="@color/title_text"
                 android:textSize="20sp"
                 android:textStyle="bold" />
 
@@ -89,7 +88,7 @@
                     android:paddingTop="4dp"
                     android:scaleType="centerInside"
                     android:src="@drawable/ic_down"
-                    android:tint="#8E7E7E" />
+                    android:tint="@color/icon_tint" />
 
                 <LinearLayout
                     android:layout_width="wrap_content"
@@ -121,25 +120,22 @@
             android:gravity="start|center"
             android:paddingStart="6dp"
             android:paddingEnd="0dp"
-            android:background="@drawable/rounded_edittext">
+            android:background="@drawable/bg_input_pill">
 
             <EditText
                 android:id="@+id/inputSearch"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="0dp"
-                android:layout_marginRight="0dp"
-                android:layout_marginBottom="0dp"
                 android:layout_weight="1"
-                android:background="@drawable/rounded_edittext"
+                android:background="@drawable/bg_input_pill"
                 android:gravity="start|center"
                 android:hint="Search"
+                android:textColorHint="@color/input_hint"
                 android:imeOptions="actionSend"
                 android:inputType="textNoSuggestions"
                 android:singleLine="true"
-                android:maxLines="4"
-                android:minLines="1"
-                android:textColor="#000000"
+                android:maxLines="1"
+                android:textColor="@color/input_text"
                 android:textSize="15sp" />
 
             <ImageView
@@ -161,7 +157,7 @@
             android:padding="8dp"
             android:scaleType="centerInside"
             android:src="@drawable/search"
-            android:tint="#8E7E7E" />
+            android:tint="@color/icon_tint" />
 
         <ImageView
             android:id="@+id/discoverIcon"
@@ -171,7 +167,7 @@
             android:padding="8dp"
             android:scaleType="centerInside"
             android:src="@drawable/feed"
-            android:tint="#0D80E0" />
+            android:tint="@color/primary_red" />
 
         <ImageView
             android:id="@+id/threeDotIcon"
@@ -181,7 +177,7 @@
             android:padding="8dp"
             android:scaleType="centerInside"
             android:src="@drawable/dot3"
-            android:tint="#8E7E7E" />
+            android:tint="@color/icon_tint" />
 
 
     </LinearLayout>
@@ -202,7 +198,7 @@
             android:id="@+id/peerDiscoveryPanel"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:background="#F0F4F8"
+            android:background="@color/peer_bar_bg"
             android:gravity="center_horizontal"
             android:orientation="vertical"
             android:padding="16dp"
@@ -213,7 +209,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Nearby Devices"
-                android:textColor="#333333"
+                android:textColor="@color/peer_bar_title"
                 android:textSize="18sp"
                 android:textStyle="bold"
                 android:layout_marginBottom="4dp" />
@@ -223,7 +219,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="SOSBlue Mesh"
-                android:textColor="#0D80E0"
+                android:textColor="@color/primary_red"
                 android:textSize="13sp"
                 android:layout_marginBottom="16dp" />
 
@@ -239,7 +235,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="No peers discovered yet.\nTap the title to refresh."
-                android:textColor="#999999"
+                android:textColor="@color/peer_detail_text"
                 android:textSize="14sp"
                 android:gravity="center"
                 android:visibility="gone" />
@@ -249,7 +245,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="0 peers online"
-                android:textColor="#888888"
+                android:textColor="@color/peer_detail_text"
                 android:textSize="12sp"
                 android:layout_marginTop="12dp" />
 
@@ -259,7 +255,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Search again"
-                android:textColor="#0D80E0"
+                android:textColor="@color/primary_red"
                 android:layout_marginTop="4dp" />
 
         </LinearLayout>
@@ -270,7 +266,7 @@
             android:layout_height="match_parent"
             android:gravity="center"
             android:text="Initialising engine..."
-            android:textColor="#888888"
+            android:textColor="@color/icon_tint"
             android:textSize="18sp"
             android:textStyle="bold"
             android:visibility="gone" />
@@ -294,8 +290,8 @@
             android:layout_height="wrap_content"
             android:text="SOSBlue Mesh"
             android:textSize="13sp"
-            android:textColor="#333333"
-            android:buttonTint="#0D80E0"
+            android:textColor="@color/transport_text"
+            android:buttonTint="@color/transport_button_tint"
             android:checked="true" />
 
         <RadioButton
@@ -304,8 +300,8 @@
             android:layout_height="wrap_content"
             android:text="F2P Serverless"
             android:textSize="13sp"
-            android:textColor="#333333"
-            android:buttonTint="#0D80E0"
+            android:textColor="@color/transport_text"
+            android:buttonTint="@color/transport_button_tint"
             android:layout_marginStart="24dp" />
 
     </RadioGroup>
@@ -314,7 +310,7 @@
         android:id="@+id/replyPreviewContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="#F0F2F5"
+        android:background="@color/peer_bar_bg"
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:paddingStart="16dp"
@@ -327,7 +323,7 @@
             android:layout_width="4dp"
             android:layout_height="match_parent"
             android:layout_marginEnd="12dp"
-            android:background="#0D80E0"
+            android:background="@color/primary_red"
             android:layout_marginTop="2dp"
             android:layout_marginBottom="2dp"/>
 
@@ -342,7 +338,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Replying to User"
-                android:textColor="#000000"
+                android:textColor="@color/bubble_incoming_text"
                 android:textStyle="bold"
                 android:textSize="14sp"
                 android:singleLine="true"
@@ -353,7 +349,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Message content..."
-                android:textColor="#65676B"
+                android:textColor="@color/peer_detail_text"
                 android:textSize="13sp"
                 android:singleLine="true"
                 android:ellipsize="end"
@@ -368,15 +364,15 @@
             android:layout_marginStart="8dp"
             android:padding="4dp"
             android:src="@drawable/close"
-            android:tint="#606770"/>
+            android:tint="@color/icon_tint"/>
     </LinearLayout>
 
     <LinearLayout
         android:id="@+id/inputContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@drawable/bg_white_round_top"
-        android:elevation="2dp"
+        android:background="@color/input_bar_background"
+        android:elevation="4dp"
         android:gravity="center_horizontal|center_vertical"
         android:orientation="horizontal"
         android:paddingStart="16dp"
@@ -395,7 +391,8 @@
                 android:layout_width="28dp"
                 android:layout_height="wrap_content"
                 android:layout_marginRight="6dp"
-                android:src="@drawable/text" />
+                android:src="@drawable/text"
+                android:tint="@color/attachment_icon" />
 
         </LinearLayout>
 
@@ -408,9 +405,10 @@
             android:layout_marginRight="6dp"
             android:layout_marginBottom="3dp"
             android:layout_weight="1"
-            android:background="@drawable/rounded_edittext"
+            android:background="@drawable/bg_input_pill"
             android:gravity="bottom|start"
             android:hint="Type your message..."
+            android:textColorHint="@color/input_hint"
             android:imeOptions="actionSend"
             android:inputType="textMultiLine"
             android:maxLines="4"
@@ -419,7 +417,7 @@
             android:paddingTop="10dp"
             android:paddingEnd="10dp"
             android:paddingBottom="10dp"
-            android:textColor="#000000"
+            android:textColor="@color/input_text"
             android:textSize="15sp" />
 
         <EditText
@@ -431,9 +429,10 @@
             android:layout_marginRight="8dp"
             android:layout_marginBottom="3dp"
             android:layout_weight="1"
-            android:background="@drawable/rounded_edittext"
+            android:background="@drawable/bg_input_pill"
             android:gravity="bottom|start"
             android:hint="Paste your image link here..."
+            android:textColorHint="@color/input_hint"
             android:imeOptions="flagNoEnterAction"
             android:inputType="textMultiLine|textUri|textNoSuggestions"
             android:maxLines="4"
@@ -442,7 +441,7 @@
             android:paddingTop="10dp"
             android:paddingEnd="10dp"
             android:paddingBottom="10dp"
-            android:textColor="#000000"
+            android:textColor="@color/input_text"
             android:textSize="15sp" />
 
         <EditText
@@ -454,9 +453,10 @@
             android:layout_marginRight="8dp"
             android:layout_marginBottom="3dp"
             android:layout_weight="1"
-            android:background="@drawable/rounded_edittext"
+            android:background="@drawable/bg_input_pill"
             android:gravity="bottom|start"
             android:hint="Paste your video link here..."
+            android:textColorHint="@color/input_hint"
             android:imeOptions="flagNoEnterAction"
             android:inputType="textMultiLine|textUri|textNoSuggestions"
             android:maxLines="4"
@@ -465,7 +465,7 @@
             android:paddingTop="10dp"
             android:paddingEnd="10dp"
             android:paddingBottom="10dp"
-            android:textColor="#000000"
+            android:textColor="@color/input_text"
             android:textSize="15sp" />
 
         <FrameLayout
@@ -477,7 +477,12 @@
                 android:id="@+id/sendButton"
                 android:layout_width="40dp"
                 android:layout_height="40dp"
-                android:src="@drawable/sent"/>
+                android:src="@drawable/sent"
+                android:scaleType="centerInside"
+                android:background="@drawable/bg_send_button"
+                android:foreground="?android:attr/selectableItemBackgroundBorderless"
+                android:padding="10dp"
+                android:tint="@color/white"/>
 
             <FrameLayout
                 android:id="@+id/loadingContainer"
@@ -495,7 +500,7 @@
                     android:id="@+id/sendProgressBar"
                     android:layout_width="40dp"
                     android:layout_height="40dp"
-                    android:indeterminateTint="#0D80E0" />
+                    android:indeterminateTint="@color/primary_red" />
             </FrameLayout>
         </FrameLayout>
 

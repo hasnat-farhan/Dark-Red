@@ -2,69 +2,90 @@ package com.antor.f2p.engine.network;
 
 import com.antor.f2p.engine.core.FibreEngineStateMachine;
 
-import java.util.Random;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.net.SocketException;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
 
 /**
- * Lightweight mock peer discovery handler.
- * <p>
- * Simulates heartbeat-based peer detection: after a configurable number of
- * heartbeat cycles, enough peers are "detected" and the engine transitions
- * from {@code DISCOVERING_PEERS} → {@code CONNECTED_MESH}.
- * </p>
+ * Real UDP-based peer discovery handler that broadcasts heartbeat beacons
+ * and registers peers discovered via the Android-side UdpMeshManager.
  *
- * <p>
- * This is a <strong>mock</strong> implementation for scaffolding and testing.
- * Replace with a real UDP/mDNS/gossip-based discovery for production.
- * </p>
+ * <h3>Architecture</h3>
+ * <ul>
+ *   <li><b>Sending:</b> Opens its own {@link DatagramSocket} to broadcast
+ *       JSON heartbeat beacons to the LAN broadcast address on a configurable
+ *       port. Heartbeat format:
+ *       {@code {"type":"peer_heartbeat","node_id":"...","phone":"...","timestamp":...}}</li>
+ *   <li><b>Receiving:</b> Incoming heartbeats arrive via the Android-side
+ *       {@code UdpMeshManager} (which holds the {@code MulticastLock}) and
+ *       are fed into {@link #onHeartbeatReceived(String, String)} by
+ *       {@code F2PBridge}. This method registers the peer and transitions
+ *       the engine state to {@code CONNECTED_MESH}.</li>
+ *   <li><b>Lifecycle:</b> Starts on engine initialize, stops on shutdown.</li>
+ * </ul>
  */
 public class PeerDiscoveryHandler {
 
     private static final Logger LOG = Logger.getLogger(PeerDiscoveryHandler.class.getName());
 
-    private static final int DEFAULT_HEARTBEAT_INTERVAL_MS = 500;
-    private static final int DEFAULT_PEERS_REQUIRED = 3;
-    private static final int DEFAULT_MAX_HEARTBEAT_CYCLES = 5;
+    /** Default interval between heartbeat broadcasts (ms). */
+    public static final int DEFAULT_HEARTBEAT_INTERVAL_MS = 3000;
+    /** Default UDP port for heartbeat broadcasts. */
+    public static final int DEFAULT_DISCOVERY_PORT = 41234;
 
     private final int heartbeatIntervalMs;
-    private final int peersRequired;
-    private final int maxHeartbeatCycles;
+    private final int port;
+    private final String nodeId;
+    private final String phoneNumber;
+    private final PeerDiscovery peerDiscovery;
 
     private final AtomicBoolean running;
-    private final AtomicInteger heartbeatCycle;
-    private final Random random;
+    private final AtomicBoolean meshFormed;
 
     private ScheduledExecutorService scheduler;
     private ScheduledFuture<?> heartbeatFuture;
+    private DatagramSocket sendSocket;
     private FibreEngineStateMachine stateMachine;
 
-    /** Creates a handler with default parameters. */
+    /**
+     * Creates a minimal no-op handler for use as a default placeholder
+     * before the real handler is configured via {@code F2PBridge}.
+     * Does NOT open any sockets or send heartbeats.
+     */
     public PeerDiscoveryHandler() {
-        this(DEFAULT_HEARTBEAT_INTERVAL_MS, DEFAULT_PEERS_REQUIRED, DEFAULT_MAX_HEARTBEAT_CYCLES);
+        this(DEFAULT_HEARTBEAT_INTERVAL_MS, DEFAULT_DISCOVERY_PORT,
+                "unknown", "", null);
     }
 
     /**
-     * Creates a handler with custom parameters.
+     * Creates a real UDP peer discovery handler.
      *
-     * @param heartbeatIntervalMs interval between heartbeat broadcasts (ms)
-     * @param peersRequired       number of peers needed to consider the mesh formed
-     * @param maxHeartbeatCycles  max heartbeat rounds before declaring failure
+     * @param heartbeatIntervalMs interval between heartbeat broadcasts
+     * @param port                UDP port for broadcasts (must match UdpMeshManager port)
+     * @param nodeId              local node identifier
+     * @param phoneNumber         local phone number for identification
+     * @param peerDiscovery       peer registry to announce discovered nodes
      */
     public PeerDiscoveryHandler(int heartbeatIntervalMs,
-                                int peersRequired,
-                                int maxHeartbeatCycles) {
-        this.heartbeatIntervalMs = heartbeatIntervalMs;
-        this.peersRequired = peersRequired;
-        this.maxHeartbeatCycles = maxHeartbeatCycles;
+                                 int port,
+                                 String nodeId,
+                                 String phoneNumber,
+                                 PeerDiscovery peerDiscovery) {
+        this.heartbeatIntervalMs = heartbeatIntervalMs > 0 ? heartbeatIntervalMs : DEFAULT_HEARTBEAT_INTERVAL_MS;
+        this.port = port > 0 ? port : DEFAULT_DISCOVERY_PORT;
+        this.nodeId = nodeId != null ? nodeId : "unknown";
+        this.phoneNumber = phoneNumber != null ? phoneNumber : "";
+        this.peerDiscovery = peerDiscovery;
         this.running = new AtomicBoolean(false);
-        this.heartbeatCycle = new AtomicInteger(0);
-        this.random = new Random();
+        this.meshFormed = new AtomicBoolean(false);
     }
 
     // ---------------------------------------------------------------
@@ -72,16 +93,29 @@ public class PeerDiscoveryHandler {
     // ---------------------------------------------------------------
 
     /**
-     * Binds this handler to a state machine and begins mock discovery.
+     * Starts the handler: binds a UDP send socket and begins broadcasting
+     * periodic heartbeat beacons.
      *
-     * @param fsm the engine's state machine (must be in DISCOVERING_PEERS)
+     * @param fsm the engine's state machine for lifecycle transitions
      */
     public void start(FibreEngineStateMachine fsm) {
         if (running.getAndSet(true)) {
             return;
         }
         this.stateMachine = fsm;
-        this.heartbeatCycle.set(0);
+
+        // ── Open UDP send socket ───────────────────────────────────────
+        try {
+            sendSocket = new DatagramSocket();
+            sendSocket.setBroadcast(true);
+            sendSocket.setReuseAddress(true);
+            LOG.info("UDP discovery send socket opened on ephemeral port");
+        } catch (SocketException e) {
+            LOG.warning("Failed to open UDP send socket for discovery: " + e.getMessage());
+            sendSocket = null;
+        }
+
+        // ── Start heartbeat scheduler ──────────────────────────────────
         this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "peer-discovery-heartbeat");
             t.setDaemon(true);
@@ -89,18 +123,22 @@ public class PeerDiscoveryHandler {
         });
 
         heartbeatFuture = scheduler.scheduleAtFixedRate(
-                this::heartbeatTick,
-                0,
+                this::sendHeartbeat,
+                500,                    // initial delay — give engine time to settle
                 heartbeatIntervalMs,
                 TimeUnit.MILLISECONDS
         );
 
-        LOG.info("PeerDiscoveryHandler started (interval=" + heartbeatIntervalMs
-                + "ms, peersRequired=" + peersRequired
-                + ", maxCycles=" + maxHeartbeatCycles + ")");
+        LOG.info("Real PeerDiscoveryHandler started (interval=" + heartbeatIntervalMs
+                + "ms, port=" + port + ", node=" + nodeId + ")");
+
+        // If no other peers are expected (standalone mode), transition
+        // to CONNECTED_MESH immediately so the app is usable.
+        // The peer list will populate as heartbeats arrive.
+        transitionToMesh();
     }
 
-    /** Stops the heartbeat scheduler. */
+    /** Stops the heartbeat scheduler and closes the send socket. */
     public void stop() {
         running.set(false);
         if (heartbeatFuture != null) {
@@ -109,37 +147,93 @@ public class PeerDiscoveryHandler {
         if (scheduler != null) {
             scheduler.shutdownNow();
         }
+        if (sendSocket != null && !sendSocket.isClosed()) {
+            sendSocket.close();
+            sendSocket = null;
+        }
         LOG.info("PeerDiscoveryHandler stopped");
     }
 
     // ---------------------------------------------------------------
-    //  Mock heartbeat
+    //  Heartbeat send
     // ---------------------------------------------------------------
 
-    private void heartbeatTick() {
-        if (!running.get() || stateMachine == null) {
+    /**
+     * Broadcasts a JSON heartbeat beacon to the LAN.
+     */
+    private void sendHeartbeat() {
+        if (!running.get() || sendSocket == null) {
             return;
         }
+        try {
+            // Build heartbeat JSON
+            String heartbeat = "{"
+                    + "\"type\":\"peer_heartbeat\""
+                    + ",\"node_id\":\"" + nodeId + "\""
+                    + ",\"phone\":\"" + phoneNumber + "\""
+                    + ",\"timestamp\":" + System.currentTimeMillis()
+                    + "}";
 
-        int cycle = heartbeatCycle.incrementAndGet();
-        LOG.fine("Heartbeat cycle " + cycle + "/" + maxHeartbeatCycles);
+            byte[] data = heartbeat.getBytes(StandardCharsets.UTF_8);
+            InetAddress broadcastAddr = InetAddress.getByName("255.255.255.255");
+            DatagramPacket packet = new DatagramPacket(data, data.length,
+                    broadcastAddr, port);
+            sendSocket.send(packet);
 
-        // Simulate hearing from 1..peersRequired peers each cycle (guarantees ≥1)
-        int peersHeard = 1 + random.nextInt(peersRequired);
-        LOG.fine("Heard " + peersHeard + " peer(s) this cycle");
+            LOG.fine("Heartbeat sent to 255.255.255.255:" + port);
+        } catch (Exception e) {
+            LOG.fine("Failed to send heartbeat: " + e.getMessage());
+        }
+    }
 
-        // After enough cycles, transition to CONNECTED_MESH
-        if (cycle >= maxHeartbeatCycles) {
-            if (peersHeard >= peersRequired / 2) {
-                LOG.info("Sufficient peers detected — transitioning to CONNECTED_MESH");
-                stateMachine.meshConnected();
-                stop(); // discovery complete
-            } else {
-                LOG.warning("Insufficient peers after " + maxHeartbeatCycles
-                        + " cycles — transitioning to ERROR");
-                stateMachine.fail();
-                stop();
-            }
+    // ---------------------------------------------------------------
+    //  Inbound heartbeat (called from F2PBridge via the engine)
+    // ---------------------------------------------------------------
+
+    /**
+     * Called by the Android-side {@code F2PBridge} when a
+     * {@code peer_heartbeat} packet is received via UdpMeshManager.
+     * <p>
+     * Registers the discovered peer and transitions the engine to
+     * {@code CONNECTED_MESH} if not already formed.
+     * </p>
+     *
+     * @param peerId   unique identifier of the discovered peer (node ID)
+     * @param endpoint network endpoint in the form {@code "ip:port"}
+     */
+    public void onHeartbeatReceived(String peerId, String endpoint) {
+        if (peerId == null || peerId.isEmpty()) return;
+
+        // Register the peer (safe if peerDiscovery is null — default handler case)
+        if (peerDiscovery != null) {
+            peerDiscovery.announcePeer(peerId, endpoint);
+        }
+        LOG.info("Peer discovered via heartbeat: " + peerId + " @ " + endpoint);
+
+        // Transition to mesh if not already formed
+        if (!meshFormed.getAndSet(true)) {
+            LOG.info("First peer discovered — transitioning to CONNECTED_MESH");
+            transitionToMesh();
+        }
+    }
+
+    /** Returns true if the handler has started. */
+    public boolean isRunning() {
+        return running.get();
+    }
+
+    /** Returns true if at least one peer has been discovered. */
+    public boolean isMeshFormed() {
+        return meshFormed.get();
+    }
+
+    // ---------------------------------------------------------------
+    //  Internal
+    // ---------------------------------------------------------------
+
+    private void transitionToMesh() {
+        if (stateMachine != null) {
+            stateMachine.meshConnected();
         }
     }
 }

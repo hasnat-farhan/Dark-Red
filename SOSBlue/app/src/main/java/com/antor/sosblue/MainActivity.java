@@ -54,12 +54,20 @@ public class MainActivity extends AppCompatActivity {
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
             Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
-            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
+            Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
+            // Apply system-bar padding (status bar) on top,
+            // and IME (keyboard) inset on bottom so the input bar
+            // always floats above the soft keyboard.
+            v.setPadding(
+                    systemBars.left,
+                    systemBars.top,
+                    systemBars.right,
+                    Math.max(systemBars.bottom, ime.bottom));
             return insets;
         });
 
         // Initialise F2P Bridge
-        bridge = new F2PBridge();
+        bridge = new F2PBridge(this);
 
         // References
         textStatus = findViewById(R.id.textStatus);
@@ -342,6 +350,16 @@ public class MainActivity extends AppCompatActivity {
                 transportRadioGroup.getCheckedRadioButtonId());
 
         bridge.sendMessageAsync(messageText, recipientId, mode,
-                () -> showSendProgress(false));
+                new F2PBridge.OnMessageSendListener() {
+                    @Override
+                    public void onSent() {
+                        showSendProgress(false);
+                    }
+
+                    @Override
+                    public void onSendFailed(String reason) {
+                        showSendProgress(false);
+                    }
+                });
     }
 }

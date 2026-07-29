@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="start"
+    android:paddingStart="8dp"
+    android:paddingEnd="48dp"
+    android:paddingTop="2dp"
+    android:paddingBottom="2dp">
+
+    <!-- Avatar circle -->
+    <ImageView
+        android:id="@+id/avatarIncoming"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_marginEnd="8dp"
+        android:layout_marginTop="2dp"
+        android:background="@drawable/circle_bg"
+        android:scaleType="centerInside"
+        android:src="@drawable/nearby"
+        android:contentDescription="Sender avatar" />
+
+    <!-- Media Bubble -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@drawable/bubble_incoming"
+        android:padding="4dp"
+        android:elevation="1dp"
+        android:maxWidth="280dp">
+
+        <!-- Media preview container -->
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <ImageView
+                android:id="@+id/mediaPreview"
+                android:layout_width="match_parent"
+                android:layout_height="200dp"
+                android:scaleType="centerCrop"
+                android:background="#1A1A1A"
+                android:contentDescription="Media preview" />
+
+            <!-- Video play overlay -->
+            <ImageView
+                android:id="@+id/videoPlayIcon"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_gravity="center"
+                android:src="@drawable/sent"
+                android:scaleType="centerInside"
+                android:background="@drawable/circle_bg"
+                android:backgroundTint="#80000000"
+                android:padding="12dp"
+                android:tint="@color/white"
+                android:visibility="gone"
+                android:contentDescription="Play video" />
+
+            <!-- Progress bar for uploading -->
+            <ProgressBar
+                android:id="@+id/mediaProgress"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom"
+                android:progressTint="@color/primary_red"
+                android:progressBackgroundTint="#40FFFFFF"
+                android:max="100"
+                android:visibility="gone" />
+        </FrameLayout>
+
+        <!-- Caption text (optional) -->
+        <TextView
+            android:id="@+id/messageText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="2dp"
+            android:textColor="@color/bubble_incoming_text"
+            android:textSize="14sp"
+            android:lineSpacingExtra="2dp"
+            android:textIsSelectable="true"
+            android:visibility="gone" />
+
+        <!-- File info + timestamp -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="end"
+            android:paddingHorizontal="10dp"
+            android:paddingBottom="4dp">
+
+            <TextView
+                android:id="@+id/mediaInfo"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/bubble_incoming_timestamp"
+                android:textSize="10sp"
+                android:layout_marginEnd="6dp" />
+
+            <TextView
+                android:id="@+id/timestampText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/bubble_incoming_timestamp"
+                android:textSize="11sp" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

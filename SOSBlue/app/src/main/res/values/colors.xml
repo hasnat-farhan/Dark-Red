@@ -2,4 +2,54 @@
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- Dark Red Theme -->
+    <color name="primary_red">#D32F2F</color>
+    <color name="accent_red">#E50914</color>
+    <color name="chat_background">#121212</color>
+    <color name="top_bar_background">#1A1A1A</color>
+    <color name="input_bar_background">#1A1A1A</color>
+
+    <!-- Message Bubbles -->
+    <color name="bubble_incoming_bg">#FFFFFF</color>
+    <color name="bubble_incoming_text">#1A1A1A</color>
+    <color name="bubble_incoming_timestamp">#666666</color>
+    <color name="bubble_incoming_border">#DDDDDD</color>
+
+    <color name="bubble_outgoing_bg">#D32F2F</color>
+    <color name="bubble_outgoing_text">#FFFFFF</color>
+    <color name="bubble_outgoing_timestamp">#FFFFFFCC</color>
+
+    <!-- Input Area -->
+    <color name="input_text">#FFFFFF</color>
+    <color name="input_hint">#999999</color>
+    <color name="input_background">#2A2A2E</color>
+    <color name="input_border">#3A3A3E</color>
+    <color name="send_button_tint">#D32F2F</color>
+    <color name="attachment_icon">#AAAAAA</color>
+
+    <!-- Top Bar -->
+    <color name="title_text">#FFFFFF</color>
+    <color name="icon_tint">#AAAAAA</color>
+    <color name="online_green">#4CAF50</color>
+
+    <!-- Peer Bar -->
+    <color name="peer_bar_bg">#1E1E24</color>
+    <color name="peer_bar_title">#FFFFFF</color>
+    <color name="peer_name_text">#FFFFFF</color>
+    <color name="peer_detail_text">#AAAAAA</color>
+
+    <!-- Transport Selector -->
+    <color name="transport_text">#FFFFFF</color>
+    <color name="transport_button_tint">#D32F2F</color>
+
+    <!-- Badge -->
+    <color name="badge_bg">#D32F2F</color>
+    <color name="badge_text">#FFFFFF</color>
+
+    <!-- Recipient Phone Input -->
+    <color name="recipient_input_bg">#1E1E24</color>
+    <color name="recipient_input_border">#D32F2F</color>
+    <color name="recipient_label">#D32F2F</color>
+    <color name="recipient_icon_tint">#D32F2F</color>
 </resources>

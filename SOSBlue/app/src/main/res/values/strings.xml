@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">SOSBlue</string>
+    <string name="hint_recipient_phone">Recipient Phone (e.g. +8801XXXXXXXX)</string>
 </resources>
