@@ -4,7 +4,7 @@
 **Last Build:** `assembleDebug` — **BUILD SUCCESSFUL** (verified Jul 30, 2026)
 **Lint:** 0 errors (verified Jul 30, 2026)
 **Engine Tests:** 17/17 passed (7 Integration + 5 Routing + 5 Security — verified Jul 30, 2026)
-**Latest Session:** Samsung A35 F2P Crash Fix — Comprehensive Android 14 audit of all permission-gated APIs (Jul 30, 2026)
+**Latest Session:** F2P Default Transport & Rapid Mode-Switch Queueing (Jul 30, 2026)
 
 ---
 
@@ -223,6 +223,11 @@ F2P (Free-to-Peer) Serverless is a decentralized, serverless, off-grid peer-to-p
 
 ## 4. New Files Created
 
+### Session 30 (F2P Default Transport & Rapid Mode-Switch Queueing)
+| File | Purpose |
+|------|---------|
+| *No new files* | All changes in existing files (see ##5) |
+
 ### Session 29 (Samsung A35 F2P Crash Fix — Comprehensive Android 14 audit of all permission-gated APIs)
 | File | Purpose |
 |------|---------|
@@ -316,6 +321,17 @@ No code changes — re-ran engine tests (17/17 passed) and `assembleDebug` (BUIL
 ---
 
 ## 5. Files Modified
+
+### Session 30 (F2P Default Transport & Rapid Mode-Switch Queueing)
+
+| File | What Changed |
+|------|-------------|
+| `TransportMode.java` | **`load()` now defaults to `F2P_SERVERLESS`** — The SharedPreferences default string was changed from `SOSBLUE_MESH.name()` to `F2P_SERVERLESS.name()`, and all three fallback return paths (isolated process, missing pref, parse error) now return `F2P_SERVERLESS`. This fixes the root cause of new conversations starting in Mesh mode despite the layout having F2P checked. |
+| `ChatActivity.java` | **Added `pendingMode` field for rapid mode-switch queueing** — When the user taps a different radio button while `isModeSwitching` is true (e.g., during async F2P engine startup), the mode is stored in `pendingMode` instead of being silently dropped. After `dismissModeSwitchDialog()` resets `isModeSwitching = false`, it checks `pendingMode` and fires the deferred switch via `onTransportModeChanged()`. Also: switch statement now handles all 3 transport modes explicitly; `revertRadioToLastSaved()` uses a switch instead of a ternary that fell back to Mesh. |
+| `activity_chat.xml` | **Reordered radio buttons: F2P Serverless (first, checked), SMS Relay (second), SOSBlue Mesh (last)** — Matches user request to make F2P the default and SOSBlue Mesh the last option. `checkedButton` set to `@+id/rb_f2p_serverless`. |
+| `activity_settings.xml` | **Same reorder: F2P → SMS → Mesh** — Reset-to-defaults now resets to F2P instead of Mesh. SMS revert fallback defaults to F2P. |
+| `activity_news_feed.xml` | **Same reorder: F2P → SMS → Mesh** — News feed transport selector now defaults to F2P. |
+| `NewsFeedActivity.java` | **Else branch defaults to F2P** — When restoring saved transport mode, the else branch now checks `news_rb_f2p_serverless` instead of `news_rb_sosblue_mesh`. |
 
 ### Session 29 (Samsung A35 F2P Crash Fix — Comprehensive Android 14 audit of all permission-gated APIs)
 
