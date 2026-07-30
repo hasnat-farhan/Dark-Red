@@ -249,5 +249,3 @@ if (mediaSize < 1024 * 1024) return String.format(java.util.Locale.ROOT, "%.1f K
                 type, mediaUri, mediaMime, mediaSize, transport, status);
     }
 }
-    }
-}
