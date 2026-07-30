@@ -4,7 +4,7 @@
 **Last Build:** `assembleDebug` — **BUILD SUCCESSFUL** (verified Jul 30, 2026)
 **Lint:** 183 warnings, **0 errors** (down from 221)
 **Engine Tests:** 17/17 passed (7 Integration + 5 Routing + 5 Security — verified Jul 30, 2026)
-**Latest Session:** Crash Prevention, Media Chunk Integrity & Bluetooth/Wi-Fi Permissions (Jul 30, 2026)
+**Latest Session:** Media Download — Save Received Images/Videos to Device Gallery (Jul 30, 2026)
 
 ---
 
@@ -223,7 +223,12 @@ F2P (Free-to-Peer) Serverless is a decentralized, serverless, off-grid peer-to-p
 
 ## 4. New Files Created
 
-### Session 11 (Current — UI/UX Navigation Redesign & Lint Resolution)
+### Session 21 (Media Download — Save Received Media to Gallery)
+| File | Purpose |
+|------|---------|
+| `drawable/ic_download.xml` | **NEW** — Vector drawable: downward arrow into a tray, used as the download button overlay on incoming media bubbles |
+
+### Session 11 (UI/UX Navigation Redesign & Lint Resolution)
 | File | Purpose |
 |------|---------|
 | `menu/top_app_bar_menu.xml` | **NEW** — Overflow menu resource with structured navigation: Chats, News Feed, Transport Mode submenu (3 tiers), Settings, About. Replaces deleted `bottom_nav_menu.xml` |
@@ -286,6 +291,17 @@ No code changes — re-ran engine tests (17/17 passed) and `assembleDebug` (BUIL
 ---
 
 ## 5. Files Modified
+
+### Session 21 (Media Download — Save Received Images/Videos to Gallery)
+
+| File | What Changed |
+|------|-------------|
+| `ic_download.xml` | **NEW** — Vector drawable: downward arrow into a tray icon for the media download button overlay |
+| `item_message_media_incoming.xml` | **Added download button overlay** — New `@+id/downloadButton` ImageView positioned at top-right of the media preview FrameLayout. Semi-transparent black circle background (`#CC000000`) with white download arrow. Hidden by default (`visibility="gone"`), shown by adapter only on incoming media. |
+| `ChatAdapter.java` | **Added `OnDownloadClickListener` interface** with `onDownloadClick(MessageModel)` callback. Added `setOnDownloadClickListener()` setter. Download button wiring: shown only on incoming media (`!msg.isSent()`) with null-safe click listener. Added `downloadButton` field to ViewHolder. |
+| `ChatActivity.java` | **Added media download feature with 4 new methods:** `showDownloadMediaDialog()` — AlertDialog popup with file name/size/type info, confirms before saving. `saveMediaToGallery()` — storage permission check (pre-Android 10), runs background thread file I/O to prevent ANR. `saveViaMediaStore()` — saves to device gallery via `MediaStore.Images.Media`/`Video.Media` (API 29+, no permissions), uses `IS_PENDING` flag for atomic writes, videos go to `MOVIES/SOSBlue/`, images to `PICTURES/SOSBlue/`. `saveViaDirectFile()` — writes to external storage directory with media scanner broadcast (pre-API 29). `requestStoragePermissionForDownload()` — runtime permission launcher for `WRITE_EXTERNAL_STORAGE`. Added `storagePermissionLauncher` field registered in `initializedOnCreate()`, `pendingDownloadMessage` field for permission callback. Adapter download listener set with `setOnDownloadClickListener(this::showDownloadMediaDialog)`. Added `import android.os.Environment`. |
+| `AndroidManifest.xml` | **Added `WRITE_EXTERNAL_STORAGE`** permission with `android:maxSdkVersion="28"` — only needed for pre-Android 10 direct file writes; Android 10+ uses MediaStore without permissions. |
+| `strings.xml` | **Added 7 download-related strings:** `download_media_title`, `download_media_message` (format string with type/file/size/mime), `download_media_confirm` ("Save to Gallery"), `download_media_cancel`, `download_media_saved`, `download_media_failed`, `download_permission_required`. |
 
 ### Session 19-20 (Media Chunk Integrity, Bluetooth/Wi-Fi Permissions & Crash Prevention Buffering)
 
@@ -643,6 +659,15 @@ When a P2P peer is selected:
 ---
 
 ## 7. Key Features Implemented
+
+### ✅ Media Download — Save Received Images/Videos to Gallery (Session 21)
+- **Download button on incoming media** — A download icon (downward arrow in a semi-transparent circle) appears at the top-right corner of received image/video bubbles, visible only on incoming (not outgoing) media.
+- **Confirmation dialog popup** — Tapping the download icon shows an `AlertDialog` with file name, size (e.g. "2.4 MB"), and MIME type (e.g. "image/jpeg"). User confirms with "Save to Gallery".
+- **MediaStore save (Android 10+)** — Images saved to `PICTURES/SOSBlue/`, videos to `MOVIES/SOSBlue/` using `MediaStore` API with `IS_PENDING` flag for atomic writes. No storage permission needed.
+- **Direct file save (Android 9 and below)** — Writes to external storage public directory with `WRITE_EXTERNAL_STORAGE` permission, followed by `ACTION_MEDIA_SCANNER_SCAN_FILE` broadcast for immediate gallery visibility.
+- **Background thread I/O** — File reading and writing runs on a background thread to prevent ANR on large video files (up to 100MB cap from MediaChunker).
+- **`isActivityDestroyed` guards** — All `runOnUiThread()` callbacks in download methods check `isActivityDestroyed` before showing Toasts, preventing detached-activity crashes.
+- **Runtime permission (pre-Android 10)** — `WRITE_EXTERNAL_STORAGE` requested via dedicated `storagePermissionLauncher`, with `pendingDownloadMessage` field to retry save after grant. Permission declared with `android:maxSdkVersion="28"`.
 
 ### ✅ Media Chunk Integrity & Bluetooth/Wi-Fi Permissions (Session 19-20)
 - **Media chunk checksum fix** — `MediaChunker.computeChecksum()` now exposes the internal SHA-256 hasher so received chunks are validated with a real checksum instead of an empty byte array. Fixes broken image/video reconstruction over F2P.
