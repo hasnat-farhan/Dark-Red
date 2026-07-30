@@ -1022,7 +1022,7 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
                     }
                 }
             };
-            modeSwitchTimeoutHandler.postDelayed(modeSwitchTimeoutRunnable, 1500);
+            modeSwitchTimeoutHandler.postDelayed(modeSwitchTimeoutRunnable, 3000);
 
             // ── Stop F2P engine if we are LEAVING F2P mode ──
             // This prevents the engine from running in the background
@@ -1148,9 +1148,18 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
         } finally {
             // NOTE: isModeSwitching is NOT reset here because the F2P
             // async engine path needs it to stay true until the engine
-            // actually starts (or times out after 1.5s). It is reset
+            // actually starts (or times out after 3s). It is reset
             // inside dismissModeSwitchDialog() which is called on every
             // success / error / timeout path.
+            //
+            // Safety net: if a RuntimeException slips through the
+            // catch block and leaves the dialog showing, dismiss it
+            // here to prevent a stuck dialog.
+            if (modeSwitchDialog != null && modeSwitchDialog.isShowing()) {
+                Log.w("ChatActivity",
+                        "Mode switch finally: dismissing stuck dialog for " + mode);
+                dismissModeSwitchDialog(false);
+            }
         }
     }
 

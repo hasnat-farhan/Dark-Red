@@ -4,7 +4,7 @@
 **Last Build:** `assembleDebug` — **BUILD SUCCESSFUL** (verified Jul 30, 2026)
 **Lint:** 183 warnings, **0 errors** (down from 221)
 **Engine Tests:** 17/17 passed (7 Integration + 5 Routing + 5 Security — verified Jul 30, 2026)
-**Latest Session:** SMS Permission Checks, F2PBridge Lambda Crash Fix & Mode-Switch Buffering Dialog (Jul 30, 2026)
+**Latest Session:** Mode-Switch Stability Fixes — F2PBridge Executor Shutdown Bug & ChatActivity Timeout + Safety Net (Jul 30, 2026)
 
 ---
 
@@ -223,6 +223,11 @@ F2P (Free-to-Peer) Serverless is a decentralized, serverless, off-grid peer-to-p
 
 ## 4. New Files Created
 
+### Session 23 (Mode-Switch Stability Fixes — F2PBridge Executor Shutdown Bug & ChatActivity Timeout)
+| File | Purpose |
+|------|---------|
+| *No new files* | All changes in existing files |
+
 ### Session 22 (SMS Permission Checks, F2PBridge Lambda Crash Fix & Mode-Switch Buffering Dialog)
 | File | Purpose |
 |------|---------|
@@ -296,6 +301,15 @@ No code changes — re-ran engine tests (17/17 passed) and `assembleDebug` (BUIL
 ---
 
 ## 5. Files Modified
+
+### Session 23 (Mode-Switch Stability Fixes — F2PBridge Executor Shutdown Bug & ChatActivity Timeout + Safety Net)
+
+| File | What Changed |
+|------|-------------|
+| `F2PBridge.java` | **Fixed critical executor shutdown bug** — Removed `executor.shutdownNow()` and `dedupCleanup.shutdownNow()` from `stopEngine()`. These `final` executor fields were being shut down permanently, making **every subsequent engine restart** silently fail with `RejectedExecutionException`. After one mode switch away from F2P, the engine could never be restarted. Replaced with detailed comment explaining why daemon-thread executors are safe to leave running: `startEngine()` is `synchronized` + guarded by `AtomicBoolean started`, stale tasks are harmless, and the executors are cleaned up on process exit. |
+| `ChatActivity.java` | **Two stability improvements to mode-switch dialog:**
+  - **Timeout increased** from 1500ms → **3000ms** — the previous 1.5s timeout was too short for F2P engine initialisation; a slow engine start would time out and dismiss the dialog before the engine was ready
+  - **Finally block safety net** — Added a check at the end of the `try-catch-finally` block: if the mode-switch dialog is still showing (meaning a `RuntimeException` slipped through the catch block), it gets dismissed immediately with a log warning. This prevents a permanently stuck dialog that would block all future mode switches (since `isModeSwitching` would remain `true`) |
 
 ### Session 22 (SMS Permission Checks, F2PBridge Lambda Crash Fix & Mode-Switch Buffering Dialog)
 
