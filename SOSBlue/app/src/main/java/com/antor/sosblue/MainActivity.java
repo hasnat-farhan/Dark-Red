@@ -1,6 +1,9 @@
 package com.antor.sosblue;
 
+import android.Manifest;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
@@ -10,6 +13,9 @@ import android.widget.RadioGroup;
 import android.widget.TextView;
 
 import androidx.activity.EdgeToEdge;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.core.content.ContextCompat;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
@@ -20,6 +26,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.antor.f2p.engine.api.EngineConfig;
 import com.antor.sosblue.bridge.F2PBridge;
 import com.antor.sosblue.bridge.TransportMode;
+import com.antor.sosblue.identity.UserIdentity;
 import com.antor.sosblue.inbox.ConversationAdapter;
 import com.antor.sosblue.inbox.ConversationModel;
 import com.antor.sosblue.inbox.ConversationRegistry;
@@ -55,6 +62,9 @@ public class MainActivity extends AppCompatActivity {
     /** Maps peer nodeId → phone number for E2E encryption key derivation. */
     private final ConcurrentHashMap<String, String> peerPhoneNumbers = new ConcurrentHashMap<>();
 
+    /** Permission launcher for POST_NOTIFICATIONS (Android 13+). */
+    private ActivityResultLauncher<String> notificationPermissionLauncher;
+
     // ---------------------------------------------------------------
     //  Lifecycle
     // ---------------------------------------------------------------
@@ -62,6 +72,27 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        // ── F2P Identity Gate ──────────────────────────────────────
+        // Redirect to sign-in if user identity is not yet registered.
+        if (!UserIdentity.isRegistered(this)) {
+            startActivity(new android.content.Intent(this,
+                    com.antor.sosblue.identity.SignInActivity.class));
+            finish();
+            return;
+        }
+
+        // ── Runtime permission launcher for POST_NOTIFICATIONS (Android 13+) ──
+        notificationPermissionLauncher = registerForActivityResult(
+                new ActivityResultContracts.RequestPermission(), granted -> {
+                    if (granted) {
+                        Log.i("MainActivity", "POST_NOTIFICATIONS granted");
+                    } else {
+                        Log.w("MainActivity", "POST_NOTIFICATIONS denied — notifications disabled");
+                    }
+                });
+        requestNotificationPermissionIfNeeded();
+
         EdgeToEdge.enable(this);
         setContentView(R.layout.activity_main);
 
@@ -394,6 +425,25 @@ public class MainActivity extends AppCompatActivity {
             if (show) {
                 textStatus.setText("Initialising engine...");
             }
+        }
+    }
+
+    // ---------------------------------------------------------------
+    //  Peer discovery panel
+    // ---------------------------------------------------------------
+
+    // ---------------------------------------------------------------
+    //  Runtime permission helpers
+    // ---------------------------------------------------------------
+
+    /**
+     * Requests POST_NOTIFICATIONS on Android 13+ if not already granted.
+     */
+    private void requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return;
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS);
         }
     }
 

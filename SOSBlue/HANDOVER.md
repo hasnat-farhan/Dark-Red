@@ -4,7 +4,7 @@
 **Last Build:** `assembleDebug` — **BUILD SUCCESSFUL** (verified Jul 30, 2026)
 **Lint:** 183 warnings, **0 errors** (down from 221)
 **Engine Tests:** 17/17 passed (7 Integration + 5 Routing + 5 Security — verified Jul 30, 2026)
-**Latest Session:** UI/UX Navigation Redesign, Lint Resolution & Crash Audit (Jul 30, 2026)
+**Latest Session:** Crash Prevention & Android 14 Stability Fix (Jul 30, 2026)
 
 ---
 
@@ -287,7 +287,20 @@ No code changes — re-ran engine tests (17/17 passed) and `assembleDebug` (BUIL
 
 ## 5. Files Modified
 
-### Session 11 (Current — UI/UX Navigation Redesign, Lint Resolution & Crash Audit)
+### Session 12 (Current — Crash Prevention & Android 14 Stability Fix)
+
+| File | What Changed |
+|------|-------------|
+| `AndroidManifest.xml` | **Moved MAIN/LAUNCHER intent filter** from `ChatActivity` to `MainActivity`. `ChatActivity` now `exported=false`; `MainActivity` now `exported=true` with launcher intent filter. This was the root cause of the app opening directly to a 1-on-1 chat screen instead of the conversation inbox. |
+| `SignInActivity.java` | **Changed `launchChat()`** to launch `MainActivity` instead of `ChatActivity` — users now land on the conversation inbox after sign-in. Updated import from `ChatActivity` to `MainActivity`. |
+| `MainActivity.java` | **Added identity gate redirect** at top of `onCreate()` — redirects to `SignInActivity` if not registered. **Added `POST_NOTIFICATIONS` runtime permission request** on Android 13+. **Added imports:** `Manifest`, `PackageManager`, `Build`, `ContextCompat`, `ActivityResultLauncher`, `ActivityResultContracts`, `UserIdentity`. |
+| `ChatActivity.java` | **Added `POST_NOTIFICATIONS` runtime permission request** on Android 13+. **Fixed overflow menu** — "Chats" now opens `MainActivity` (inbox) instead of being a no-op. |
+| `NewsFeedActivity.java` | **Fixed overflow menu** — "Chats" now opens `MainActivity` (inbox) instead of `ChatActivity`. |
+| `SOSBlueApplication.java` | **Added global uncaught exception handler** — logs the crash with device model + SDK version, then delegates to the default handler so crashes are visible in logcat instead of silently killing the app. |
+| `WifiDirectManager.java` | **Added `RECEIVER_EXPORTED` flag** to `registerReceiver(p2pReceiver, filter)` — required on Android 14+. Without this flag, the call throws `SecurityException` and instantly crashes the app on API 34+ devices. |
+| `NetworkConnectivityManager.java` | **Added `RECEIVER_EXPORTED` flag** to both `registerReceiver(wifiStateReceiver)` and `registerReceiver(networkStateReceiver)` — fixes the same Android 14+ `SecurityException` crash. |
+
+### Session 11 (UI/UX Navigation Redesign, Lint Resolution & Crash Audit)
 
 | File | What Changed |
 |------|-------------|
@@ -567,6 +580,23 @@ When a P2P peer is selected:
 ---
 
 ## 7. Key Features Implemented
+
+### ✅ Launcher Activity Fix — App No Longer Opens Wrong Screen (Session 12)
+- **Moved MAIN/LAUNCHER intent filter** from `ChatActivity` (1-on-1 chat) to `MainActivity` (conversation inbox). Previously, tapping the app icon opened a raw 1-on-1 chat screen with no context — now it opens the proper inbox with the conversation list.
+- **Updated `SignInActivity.launchChat()`** to launch `MainActivity` after onboarding instead of `ChatActivity`.
+- **Fixed all overflow menus** so "Chats" consistently opens the conversation inbox (`MainActivity`), not a 1-on-1 chat screen.
+
+### ✅ Android 14+ BroadcastReceiver Crash Fix (Session 12)
+- **Added `Context.RECEIVER_EXPORTED` flag** to all 3 `registerReceiver()` calls in `WifiDirectManager` and `NetworkConnectivityManager`. This flag is **mandatory on Android 14+** — without it, the system throws a `SecurityException` that instantly crashes the app to the home screen on API 34+ devices.
+- Correctly gated with `Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU` for backward compatibility with API < 33 where the flag doesn't exist.
+
+### ✅ POST_NOTIFICATIONS Runtime Permission (Session 12)
+- Added `notificationPermissionLauncher` and `requestNotificationPermissionIfNeeded()` to both `MainActivity` and `ChatActivity`.
+- The permission dialog now appears on Android 13+ when the app starts, as required by the OS for posting notifications.
+
+### ✅ Global Crash Handler — Stops Silent Exits (Session 12)
+- Added `Thread.setDefaultUncaughtExceptionHandler()` in `SOSBlueApplication.onCreate()` that logs the crash with device model + SDK version, then delegates to the default handler.
+- Ensures all crashes are visible in logcat with diagnostic context instead of silently killing the app.
 
 ### ✅ Navigation Redesign (Session 11)
 - **Removed floating bottom tab bar** from all 3 activities (Chats/News tabs) — navigation moved entirely to the top bar's 3-dot overflow menu and RSS/feed icon

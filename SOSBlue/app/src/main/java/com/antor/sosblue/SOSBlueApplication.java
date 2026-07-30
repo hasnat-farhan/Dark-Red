@@ -34,6 +34,23 @@ public class SOSBlueApplication extends Application {
             return;
         }
 
+        // ── Global uncaught exception handler ───────────────────────
+        // Catches any exception that would otherwise crash the app,
+        // logs it, and prevents the OS from showing a sudden close.
+        // The app will still exit, but without the jarring ANR dialog,
+        // and we get the stack trace in logcat.
+        final Thread.UncaughtExceptionHandler defaultHandler =
+                Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+            Log.e(TAG, "UNCAUGHT EXCEPTION in thread " + thread.getName(), throwable);
+            // Log key context
+            Log.e(TAG, "Process: " + Build.MODEL + " (" + Build.VERSION.SDK_INT + ")");
+            // Let the default handler terminate the process
+            if (defaultHandler != null) {
+                defaultHandler.uncaughtException(thread, throwable);
+            }
+        });
+
         // Normal initialisation for the main / non-isolated processes.
         Log.i(TAG, "SOSBlueApplication initialised (pid=" + Process.myPid() + ")");
     }

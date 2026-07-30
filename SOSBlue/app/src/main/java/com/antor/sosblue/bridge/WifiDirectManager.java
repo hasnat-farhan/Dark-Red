@@ -165,7 +165,11 @@ public class WifiDirectManager {
         filter.addAction(WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION);
         filter.addAction(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION);
         filter.addAction(WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION);
-        appContext.registerReceiver(p2pReceiver, filter);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            appContext.registerReceiver(p2pReceiver, filter, Context.RECEIVER_EXPORTED);
+        } else {
+            appContext.registerReceiver(p2pReceiver, filter);
+        }
         receiverRegistered = true;
 
         Log.i(TAG, "Wi-Fi Direct initialized and receiver registered");

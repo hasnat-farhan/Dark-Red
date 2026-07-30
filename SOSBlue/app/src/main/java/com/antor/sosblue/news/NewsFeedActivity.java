@@ -283,7 +283,8 @@ public class NewsFeedActivity extends AppCompatActivity {
         popup.setOnMenuItemClickListener(item -> {
             int id = item.getItemId();
             if (id == R.id.menu_chats) {
-                startActivity(new Intent(this, ChatActivity.class));
+                startActivity(new Intent(this,
+                        com.antor.sosblue.MainActivity.class));
                 finish();
                 return true;
             } else if (id == R.id.menu_news_feed) {

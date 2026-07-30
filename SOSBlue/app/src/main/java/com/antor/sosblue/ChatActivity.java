@@ -77,6 +77,9 @@ public class ChatActivity extends AppCompatActivity {
     /** Permission launcher for SMS (SEND_SMS + RECEIVE_SMS + READ_PHONE_STATE). */
     private ActivityResultLauncher<String[]> smsPermissionLauncher;
 
+    /** Permission launcher for POST_NOTIFICATIONS (Android 13+). */
+    private ActivityResultLauncher<String> notificationPermissionLauncher;
+
     /**
      * Saved transport mode BEFORE the user tapped SMS Relay — used to
      * revert the radio when permission is denied or SIM is absent.
@@ -152,6 +155,17 @@ public class ChatActivity extends AppCompatActivity {
                         Log.i("ChatActivity", "All Wi-Fi/location permissions granted");
                     }
                 });
+
+        // ── Runtime permission launcher for POST_NOTIFICATIONS (Android 13+) ──
+        notificationPermissionLauncher = registerForActivityResult(
+                new ActivityResultContracts.RequestPermission(), granted -> {
+                    if (granted) {
+                        Log.i("ChatActivity", "POST_NOTIFICATIONS granted");
+                    } else {
+                        Log.w("ChatActivity", "POST_NOTIFICATIONS denied — notifications disabled");
+                    }
+                });
+        requestNotificationPermissionIfNeeded();
 
         // ── Runtime permission launcher for SMS carrier ──────────────
         // SEND_SMS + RECEIVE_SMS are both runtime-dangerous on API 23+
@@ -633,7 +647,10 @@ public class ChatActivity extends AppCompatActivity {
             popup.setOnMenuItemClickListener(item -> {
                 int id = item.getItemId();
                 if (id == R.id.menu_chats) {
-                    // Already in Chat Feed
+                    // Go to conversation inbox
+                    startActivity(new Intent(ChatActivity.this,
+                            com.antor.sosblue.MainActivity.class));
+                    finish();
                     return true;
                 } else if (id == R.id.menu_news_feed) {
                     startActivity(new Intent(ChatActivity.this,
@@ -1115,6 +1132,17 @@ public class ChatActivity extends AppCompatActivity {
                 : R.id.rb_sosblue_mesh;
         if (transportRadioGroup.getCheckedRadioButtonId() != targetId) {
             transportRadioGroup.check(targetId);
+        }
+    }
+
+    /**
+     * Requests POST_NOTIFICATIONS on Android 13+ if not already granted.
+     */
+    private void requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return;
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS);
         }
     }
 
