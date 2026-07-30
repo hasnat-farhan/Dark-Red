@@ -4,7 +4,7 @@
 **Last Build:** `assembleDebug` — **BUILD SUCCESSFUL** (verified Jul 30, 2026)
 **Lint:** 0 errors (verified Jul 30, 2026)
 **Engine Tests:** 17/17 passed (7 Integration + 5 Routing + 5 Security — verified Jul 30, 2026)
-**Latest Session:** App Icon Redesign — Black Background + Two Red Halos (Jul 30, 2026)
+**Latest Session:** Crypto Self-Test & SMS State Reset Utilities (Jul 30, 2026)
 
 ---
 
@@ -228,6 +228,11 @@ F2P (Free-to-Peer) Serverless is a decentralized, serverless, off-grid peer-to-p
 |------|---------|
 | *No new files* | All changes in existing files |
 
+### Session 28 (Crypto Self-Test & SMS State Reset Utilities)
+| File | Purpose |
+|------|---------|
+| *No new files* | All changes in existing files (see ##5) |
+
 ### Session 26 (SMS Media Chunking — File Transfer Over SMS Relay)
 | File | Purpose |
 |------|---------|
@@ -315,6 +320,17 @@ No code changes — re-ran engine tests (17/17 passed) and `assembleDebug` (BUIL
 | `ChatActivity.java` | **Two stability improvements to mode-switch dialog:**
   - **Timeout increased** from 1500ms → **3000ms** — the previous 1.5s timeout was too short for F2P engine initialisation; a slow engine start would time out and dismiss the dialog before the engine was ready
   - **Finally block safety net** — Added a check at the end of the `try-catch-finally` block: if the mode-switch dialog is still showing (meaning a `RuntimeException` slipped through the catch block), it gets dismissed immediately with a log warning. This prevents a permanently stuck dialog that would block all future mode switches (since `isModeSwitching` would remain `true`) |
+
+### Session 28 (Crypto Self-Test & SMS State Reset Utilities)
+
+| File | What Changed |
+|------|-------------|
+| `identity/MessageEncryptor.java` | **Added `runSelfTest(phoneA, phoneB)`** — Static on-device crypto verification method running 5 tests: (1) basic encrypt→decrypt round-trip with special characters, (2) key format compatibility (`+` vs no `+`), (3) wrong-key rejection (encrypt with phoneB → decrypt with phoneA must throw AEADBadTagException), (4) Unicode text (Arabic, Chinese, Hindi, Russian, Spanish), (5) empty message (0 bytes). All results logged to logcat under the `MessageEncryptor` tag with ✅/❌ markers. Returns boolean pass/fail. |
+| `ChatActivity.java` | **Added "🔬 Crypto Self-Test" button to About dialog** — `showAboutDialog()` now has a neutral button that calls `MessageEncryptor.runSelfTest()` with the user's real phone number (from `UserIdentity`) and a dummy different number (`+00000000000`) for the wrong-key rejection test. Shows a result dialog after completion. |
+| `bridge/SmsTransport.java` | **Added 3 public utility methods:**
+  - `getProcessedCount()` — returns sum of processed inbox IDs + correlation IDs (for debug UI)
+  - `clearProcessedIds()` — clears both in-memory sets AND SharedPreferences persistence, giving the app a clean state so the next `scanInbox()` re-processes all DR1 messages
+  - `deleteDr1MessagesFromInbox()` — attempts to delete all `DR1:%` messages from `content://sms/inbox` via `ContentResolver.delete()`. Requires `WRITE_SMS` (signature permission on API 19+ — only works if app is default SMS handler). Returns count deleted or -1 on failure. Also calls `clearProcessedIds()` on success. |
 
 ### Session 27 (App Icon — Black Background + Two Red Halos)
 

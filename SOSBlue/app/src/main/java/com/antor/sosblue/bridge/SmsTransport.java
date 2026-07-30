@@ -547,6 +547,60 @@ public class SmsTransport {
         }
     }
 
+    /**
+     * Public getter for {@link #processedCorrelationIds} size (for debugging / UI).
+     */
+    public int getProcessedCount() {
+        return processedCorrelationIds.size() + processedInboxIds.size();
+    }
+
+    // ----------------------------------------------------------------
+    //  State reset (for testing / clearing stale messages)
+    // ----------------------------------------------------------------
+
+    /**
+     * Clears ALL processed-ID tracking — both the in-memory sets and the
+     * persisted SharedPreferences. After calling this, the next
+     * {@link #scanInbox()} will re-process every DR1 message in the
+     * system SMS inbox as if it had never been seen before.
+     *
+     * <p>Call this <b>after</b> manually deleting old DR1 messages from
+     * your system SMS app to give the app a clean slate.</p>
+     */
+    public void clearProcessedIds() {
+        processedInboxIds.clear();
+        processedCorrelationIds.clear();
+        prefs.edit().remove(KEY_PROCESSED_IDS).apply();
+        Log.i(TAG, "Cleared all processed inbox IDs and correlation IDs");
+    }
+
+    /**
+     * Attempts to delete all DR1-prefixed messages from the system SMS
+     * inbox. Requires {@code android.permission.WRITE_SMS} which is
+     * a system-level permission on most devices (API 19+) — this will
+     * silently fail if the app does not hold it.
+     *
+     * <p>Returns the number of messages deleted, or -1 if the delete
+     * failed (no permission, content provider unavailable, etc.).</p>
+     */
+    public int deleteDr1MessagesFromInbox() {
+        try {
+            ContentResolver cr = appContext.getContentResolver();
+            Uri inbox = Uri.parse("content://sms/inbox");
+            int deleted = cr.delete(inbox, "body LIKE ?", new String[] { "DR1:%" });
+            Log.i(TAG, "Deleted " + deleted + " DR1 messages from inbox");
+            // Also clear our tracking since those messages are now gone
+            clearProcessedIds();
+            return deleted;
+        } catch (SecurityException se) {
+            Log.w(TAG, "Cannot delete DR1 messages: WRITE_SMS not granted");
+            return -1;
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to delete DR1 messages: " + e.getMessage());
+            return -1;
+        }
+    }
+
     // ----------------------------------------------------------------
     //  Helpers
     // ----------------------------------------------------------------

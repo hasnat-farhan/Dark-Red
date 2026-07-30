@@ -192,6 +192,154 @@ public final class MessageEncryptor {
     }
 
     // ---------------------------------------------------------------
+    //  Self-test / verification (runs on-device, prints to logcat)
+    // ---------------------------------------------------------------
+
+    /**
+     * Runs an on-device encryption/decryption round-trip test with your
+     * actual phone numbers and prints detailed results to logcat.
+     *
+     * <p>Call this from a debug menu, About dialog, or adb shell to verify
+     * the app's crypto is working correctly on your device with your real
+     * phone numbers.</p>
+     *
+     * <p><b>Tests performed:</b></p>
+     * <ol>
+     *   <li><b>Basic round-trip:</b> encrypt with {@code phoneB}, decrypt
+     *       with {@code phoneB} → original text returned</li>
+     *   <li><b>Format compatibility:</b> encrypt with {@code "+" + digits},
+     *       decrypt with just {@code digits} (no '+') → same key derived</li>
+     *   <li><b>Wrong-key rejection:</b> encrypt with {@code phoneB}, decrypt
+     *       with {@code phoneA} → AES-GCM throws AEADBadTagException</li>
+     *   <li><b>Persian / Unicode support:</b> encrypt/decrypt non-ASCII text
+     *       → round-trips correctly via UTF-8</li>
+     *   <li><b>Empty message:</b> encrypt/decrypt a zero-length message
+     *       → one AES-GCM block is produced, decrypt returns 0 bytes</li>
+     * </ol>
+     *
+     * @param phoneA the first phone number (e.g. the sender)
+     * @param phoneB the second phone number (e.g. the recipient)
+     * @return {@code true} if ALL tests pass
+     */
+    public static boolean runSelfTest(String phoneA, String phoneB) {
+        Log.i(TAG, "═══════════════════════════════════════════════");
+        Log.i(TAG, "  CRYPTO SELF-TEST STARTING");
+        Log.i(TAG, "  Phone A (sender):     " + phoneA);
+        Log.i(TAG, "  Phone B (recipient):  " + phoneB);
+        Log.i(TAG, "═══════════════════════════════════════════════");
+
+        boolean allPassed = true;
+
+        // ── Test 1: Basic round-trip ─────────────────────────────
+        String original = "Hello from " + phoneA + "! Test message: @#$%{[]}¥€";
+        Log.i(TAG, "\n── [Test 1] Basic encrypt→decrypt round-trip ──");
+        Log.i(TAG, "   Original text: " + original);
+        try {
+            byte[] ciphertext = encrypt(phoneB, original);
+            Log.i(TAG, "   Encrypted size: " + ciphertext.length + " bytes");
+            Log.i(TAG, "   (IV: first 12, ciphertext+tag: "
+                    + (ciphertext.length - 12) + " bytes)");
+
+            byte[] decrypted = decrypt(phoneB, ciphertext);
+            String result = new String(decrypted, StandardCharsets.UTF_8);
+
+            boolean pass = original.equals(result);
+            Log.i(TAG, "   Decrypted text: " + result);
+            Log.i(TAG, "   Matches original: " + (pass ? "✅ PASS" : "❌ FAIL"));
+            if (!pass) allPassed = false;
+        } catch (Exception e) {
+            Log.e(TAG, "   ❌ Test 1 FAILED with exception", e);
+            allPassed = false;
+        }
+
+        // ── Test 2: Key format compatibility ─────────────────────
+        // encrypt with "+phoneB", decrypt with "phoneB" (no '+') → same key
+        Log.i(TAG, "\n── [Test 2] Key format compatibility (+ vs no +) ──");
+        String withPlus;
+        String withoutPlus;
+        if (phoneB.startsWith("+")) {
+            withPlus = phoneB;
+            withoutPlus = phoneB.substring(1);
+        } else {
+            withPlus = "+" + phoneB;
+            withoutPlus = phoneB;
+        }
+        Log.i(TAG, "   Encrypt key context:  " + withPlus);
+        Log.i(TAG, "   Decrypt key context:  " + withoutPlus);
+        try {
+            byte[] ct = encrypt(withPlus, "Format test");
+            String decrypted = decryptAsString(withoutPlus, ct);
+            boolean pass = "Format test".equals(decrypted);
+            Log.i(TAG, "   Decrypted: " + decrypted);
+            Log.i(TAG, "   Result: " + (pass ? "✅ PASS" : "❌ FAIL"));
+            if (!pass) allPassed = false;
+        } catch (Exception e) {
+            Log.e(TAG, "   ❌ Test 2 FAILED with exception", e);
+            allPassed = false;
+        }
+
+        // ── Test 3: Wrong-key rejection ──────────────────────────
+        Log.i(TAG, "\n── [Test 3] Wrong-key rejection ──");
+        Log.i(TAG, "   Encrypt with Phone B, decrypt with Phone A");
+        Log.i(TAG, "   (should fail with AEADBadTagException or similar)");
+        try {
+            byte[] ct = encrypt(phoneB, "secret-message");
+            try {
+                decryptAsString(phoneA, ct);
+                Log.e(TAG, "   ❌ Test 3 FAILED — decryption SUCCEEDED with wrong key!");
+                allPassed = false;
+            } catch (Exception e2) {
+                String cn = e2.getClass().getSimpleName();
+                Log.i(TAG, "   Decryption correctly rejected with: " + cn);
+                Log.i(TAG, "   Message: " + e2.getMessage());
+                Log.i(TAG, "   ✅ PASS (wrong key rejected)");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "   ❌ Test 3 encrypt step failed", e);
+            allPassed = false;
+        }
+
+        // ── Test 4: Unicode / non-ASCII text ─────────────────────
+        Log.i(TAG, "\n── [Test 4] Unicode text support ──");
+        String unicode = "مرحبا بالعالم • 你好世界 • नमस्ते दुनिया • Привет мир • ñoño";
+        Log.i(TAG, "   Original: " + unicode);
+        try {
+            byte[] ct = encrypt(phoneB, unicode);
+            String decrypted = decryptAsString(phoneB, ct);
+            boolean pass = unicode.equals(decrypted);
+            Log.i(TAG, "   Decrypted: " + decrypted);
+            Log.i(TAG, "   Result: " + (pass ? "✅ PASS" : "❌ FAIL"));
+            if (!pass) allPassed = false;
+        } catch (Exception e) {
+            Log.e(TAG, "   ❌ Test 4 FAILED with exception", e);
+            allPassed = false;
+        }
+
+        // ── Test 5: Empty message ────────────────────────────────
+        Log.i(TAG, "\n── [Test 5] Empty message ──");
+        try {
+            byte[] ct = encrypt(phoneB, new byte[0]);
+            byte[] decrypted = decrypt(phoneB, ct);
+            boolean pass = decrypted.length == 0;
+            Log.i(TAG, "   Encrypted size: " + ct.length + " bytes");
+            Log.i(TAG, "   Decrypted size: " + decrypted.length + " bytes");
+            Log.i(TAG, "   Result: " + (pass ? "✅ PASS" : "❌ FAIL"));
+            if (!pass) allPassed = false;
+        } catch (Exception e) {
+            Log.e(TAG, "   ❌ Test 5 FAILED with exception", e);
+            allPassed = false;
+        }
+
+        // ── Summary ──────────────────────────────────────────────
+        Log.i(TAG, "\n═══════════════════════════════════════════════");
+        Log.i(TAG, allPassed
+                ? "  ALL 5 TESTS PASSED ✅"
+                : "  SOME TESTS FAILED ❌ — check above for details");
+        Log.i(TAG, "═══════════════════════════════════════════════");
+        return allPassed;
+    }
+
+    // ---------------------------------------------------------------
     //  Utilities
     // ---------------------------------------------------------------
 

@@ -1901,10 +1901,30 @@ markMessageStatus(outbound, MessageModel.STATUS_FAILED);
     // ---------------------------------------------------------------
 
     private void showAboutDialog() {
+        String myPhone = UserIdentity.getPhoneNumber(this);
+        String testPhone = myPhone != null ? myPhone : "+8801712345678";
+        // Dummy number guaranteed to differ from the user's real phone — used
+        // for the wrong-key rejection test (Test 3). "+00000000000" is not
+        // a valid E.164 number (country code 0 doesn't exist), but it's fine
+        // for key derivation; SHA-256 accepts any string.
+        String otherPhone = "+00000000000";
+
         new AlertDialog.Builder(this)
                 .setTitle(R.string.dialog_about_title)
                 .setMessage(R.string.dialog_about_message)
                 .setPositiveButton(R.string.dialog_ok, null)
+                .setNeutralButton("🔬 Crypto Self-Test", (d, w) -> {
+                    Log.i("ChatActivity", "--- User triggered crypto self-test ---");
+                    boolean passed = MessageEncryptor.runSelfTest(testPhone, otherPhone);
+                    String msg = passed
+                            ? "✅ All 5 crypto tests PASSED\n\nCheck logcat (tag: MessageEncryptor) for full details."
+                            : "❌ Some crypto tests FAILED\n\nCheck logcat (tag: MessageEncryptor) for details.";
+                    new AlertDialog.Builder(this)
+                            .setTitle("Crypto Self-Test Result")
+                            .setMessage(msg)
+                            .setPositiveButton("OK", null)
+                            .show();
+                })
                 .show();
     }
 
