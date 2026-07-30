@@ -1,7 +1,7 @@
 <resources>
-    <string name="app_name">SOSBlue</string>
+    <string name="app_name">Offline-36</string>
     <string name="hint_recipient_phone">Recipient Phone (e.g. +8801XXXXXXXX)</string>
-    <string name="transport_sosblue_mesh">SOSBlue Mesh</string>
+    <string name="transport_sosblue_mesh">Offline-36 Mesh</string>
     <string name="transport_f2p_serverless">F2P Serverless</string>
     <string name="transport_sms">SMS Relay</string>
     <string name="transport_sms_unavailable">SMS not available on this device</string>
@@ -17,7 +17,7 @@
     <string name="news_composer_hint">Share news to all...</string>
     <string name="news_search_hint">Search news by text or sender...</string>
     <string name="news_empty_hint">No news broadcasts yet.</string>
-    <string name="news_sent_mesh">News broadcast via SOSBlue Mesh</string>
+    <string name="news_sent_mesh">News broadcast via Offline-36 Mesh</string>
     <string name="news_sent_f2p">News broadcast via F2P</string>
     <string name="news_sent_sms">News broadcast via SMS</string>
     <string name="news_failed">News broadcast failed</string>
@@ -36,13 +36,13 @@
     <string name="menu_switch_chat">Switch to Chat Feed</string>
     <string name="menu_switch_news">Switch to News Feed</string>
     <string name="menu_settings">Settings / Mode Switch</string>
-    <string name="menu_about">How SOSBlue Works</string>
+    <string name="menu_about">How Offline-36 Works</string>
 
     <!-- Dialogs -->
     <string name="dialog_transport_title">Transport Mode</string>
     <string name="dialog_cancel">Cancel</string>
-    <string name="dialog_about_title">How SOSBlue Works</string>
-    <string name="dialog_about_message">SOSBlue — Secure Offline-Safe Blue Messenger
+    <string name="dialog_about_title">How Offline-36 Works</string>
+    <string name="dialog_about_message">Offline-36 — Offline Mesh Messenger
 
 Version 1.0
 
@@ -53,7 +53,7 @@ Your phone number is your identity. All messages are end-to-end encrypted using 
 
 2. Three Transport Tiers
 
-• SOSBlue Mesh — Discover nearby devices via UDP broadcast on local Wi-Fi. Messages hop through the mesh with TTL-based relay for extended range. No internet needed.
+• Offline-36 Mesh — Discover nearby devices via UDP broadcast on local Wi-Fi. Messages hop through the mesh with TTL-based relay for extended range. No internet needed.
 
 • F2P Serverless — The Wandering Fibre Engine routes encrypted packets through the mesh. Peers discover each other via UDP heartbeats every 3 seconds. Multi-hop routing with automatic deduplication.
 
@@ -84,10 +84,10 @@ All messages are end-to-end encrypted.</string>
     <string name="settings_news_notifications">News Broadcasts</string>
     <string name="settings_news_notifications_desc">Notifications for broadcast news items</string>
     <string name="settings_about_header">ABOUT</string>
-    <string name="settings_about_subtitle">Secure Offline-Safe Blue Messenger</string>
+    <string name="settings_about_subtitle">Offline Mesh Messenger</string>
     <string name="settings_about_desc">A peer-to-peer messaging app with 3-tier transport:
 
-• SOSBlue Mesh (BLE / WiFi-Direct P2P)
+• Offline-36 Mesh (UDP broadcast / WiFi-Direct)
 • F2P Serverless (WanderingFibreEngine)
 • SMS Relay (carrier fallback)
 

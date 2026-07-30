@@ -1,10 +1,10 @@
-# SOSBlue Mesh — Handover Document
+# Offline-36 — Handover Document
 
 **Branch:** `main`
 **Last Build:** `assembleDebug` — **BUILD SUCCESSFUL** (verified Jul 30, 2026)
-**Lint:** 183 warnings, **0 errors** (down from 221)
+**Lint:** 0 errors (verified Jul 30, 2026)
 **Engine Tests:** 17/17 passed (7 Integration + 5 Routing + 5 Security — verified Jul 30, 2026)
-**Latest Session:** Mode-Switch Stability Fixes — F2PBridge Executor Shutdown Bug & ChatActivity Timeout + Safety Net (Jul 30, 2026)
+**Latest Session:** App Icon Redesign — Black Background + Two Red Halos (Jul 30, 2026)
 
 ---
 
@@ -228,6 +228,11 @@ F2P (Free-to-Peer) Serverless is a decentralized, serverless, off-grid peer-to-p
 |------|---------|
 | *No new files* | All changes in existing files |
 
+### Session 26 (SMS Media Chunking — File Transfer Over SMS Relay)
+| File | Purpose |
+|------|---------|
+| `bridge/SmsMediaHelper.java` | **NEW** — Binary encoder/decoder for embedding media chunk metadata (transferId, chunkIndex, totalChunks, fileName, MIME type) inside F2PMessage encrypted payloads for SMS transport. Uses `MC` magic byte prefix + length-prefixed fields for compact wire format. |
+
 ### Session 22 (SMS Permission Checks, F2PBridge Lambda Crash Fix & Mode-Switch Buffering Dialog)
 | File | Purpose |
 |------|---------|
@@ -310,6 +315,41 @@ No code changes — re-ran engine tests (17/17 passed) and `assembleDebug` (BUIL
 | `ChatActivity.java` | **Two stability improvements to mode-switch dialog:**
   - **Timeout increased** from 1500ms → **3000ms** — the previous 1.5s timeout was too short for F2P engine initialisation; a slow engine start would time out and dismiss the dialog before the engine was ready
   - **Finally block safety net** — Added a check at the end of the `try-catch-finally` block: if the mode-switch dialog is still showing (meaning a `RuntimeException` slipped through the catch block), it gets dismissed immediately with a log warning. This prevents a permanently stuck dialog that would block all future mode switches (since `isModeSwitching` would remain `true`) |
+
+### Session 27 (App Icon — Black Background + Two Red Halos)
+
+| File | What Changed |
+|------|-------------|
+| `drawable/ic_launcher_background.xml` | **COMPLETELY REWRITTEN** — Replaced the previous green grid pattern with pure solid black (`#FF000000`). Clean, bold, modern background for the adaptive icon. |
+| `drawable/ic_launcher_foreground.xml` | **COMPLETELY REWRITTEN** — Replaced the default Android Studio bot icon with two concentric red glowing halos: outer halo (r=36, soft radial gradient `#33FF1744 → #00FF1744`) and inner halo (r=24, bright radial gradient `#DDFF1744 → #00FF1744`). Creates a striking sci-fi emergency beacon look. |
+
+### Session 26 (SMS Media Chunking — File Transfer Over SMS Relay)
+
+| File | What Changed |
+|------|-------------|
+| `bridge/SmsMediaHelper.java` | **NEW** — Binary format encoder/decoder for embedding media chunk metadata inside F2PMessage encrypted payloads for SMS transport. Format: magic (`MC`) + version + length-prefixed fields (transferId, chunkIndex, totalChunks, fileName, mimeType, contentType, raw data). `encode()` and `tryDecode()` static methods with null-safe parsing. |
+| `bridge/F2PBridge.java` | **Added SMS_FALLBACK media path to `sendMediaAsync()`** — When transport mode is SMS: checks file size ≤ 10KB (10240 bytes) before sending, rejects larger files with error callback. Encodes each chunk via `SmsMediaHelper.encode()`, encrypts, sends via `smsTransport.sendEnvelope()`. Uses `AtomicInteger` + `AtomicBoolean` for thread-safe async send tracking — `onComplete` fires only after all chunks confirm without failures. |
+| `ChatActivity.java` | **Added SMS media chunk detection + reassembly in `onEnvelope()`** — After decrypting SMS payload, checks for `MC` magic bytes via `SmsMediaHelper.tryDecode()`. If it's a media chunk, routes to new `handleSmsMediaChunk()` which feeds to `MediaChunker.feedChunk()` for reassembly and renders the completed media message via `addMediaMessage()`. SMS listener also normalizes recipient phone before comparison for robust delivery. |
+
+### Session 25 (SMS Decryption Fix — Persistent Dedup & Cross-Path Coordination)
+
+| File | What Changed |
+|------|-------------|
+| `SmsTransport.java` | **Fixed old-message re-processing bug** — `processedInboxIds` was previously in-memory only, causing ALL old DR1 SMS messages to be re-decrypted and injected into the chat on every app restart. **Three-layer dedup:**
+  - **Persistent** `processedInboxIds` — serialized to `SharedPreferences` as CSV, restored on construction, with 2000-entry cap to prevent unbounded growth
+  - **In-memory** `processedCorrelationIds` — shared by `onSmsReceived()` (broadcast path) and `scanInbox()` (scan path) for cross-path dedup
+  - **Triple guard** — checked in `onSmsReceived()`, `scanInbox()`, AND `dispatchEnvelopeFromBody()` for belt-and-suspenders protection |
+| `ChatActivity.java` | **Normalized `recipientPhone` before comparison** — Added `UserIdentity.normalizePhoneNumber()` to the SMS listener's recipient match check, ensuring formatted/international numbers compare correctly. |
+
+### Session 24 (App Rename — SOSBlue → Offline-36)
+
+| File | What Changed |
+|------|-------------|
+| `values/strings.xml` | **Renamed app and all display names** — `app_name`: "SOSBlue" → "Offline-36". Transport modes: "SOSBlue Mesh" → "Offline-36 Mesh". About dialog: "How SOSBlue Works" → "How Offline-36 Works", tagline updated. Settings about section: description updated with accurate tech-stack info. |
+| `bridge/TransportMode.java` | **Updated enum display label** — `SOSBLUE_MESH("SOSBlue Mesh", ...)` → `SOSBLUE_MESH("Offline-36 Mesh", ...)`. Enum constant name unchanged (code identifier). |
+| `news/F2PNewsPacket.java` | **Updated enum display label** — `SOSBLUE_MESH("SOSBlue Mesh")` → `SOSBLUE_MESH("Offline-36 Mesh")`. |
+| `ChatActivity.java` | **Updated 3 display-name references:** group notification ID (`"sosblue_mesh_broadcast"` → `"offline36_mesh_broadcast"`), group name (`"SOSBlue Mesh"` → `"Offline-36 Mesh"`), fallback phone prefix (`"sosblue-"` → `"offline36-"`), media filename prefix (`"SOSBlue_media_"` → `"Offline36_media_"`), media directory (`sosblueDir` → `offline36Dir`, `"SOSBlue"` → `"Offline-36"`). |
+| `HANDOVER.md` | **Title updated** — "# SOSBlue Mesh — Handover Document" → "# Offline-36 — Handover Document". |
 
 ### Session 22 (SMS Permission Checks, F2PBridge Lambda Crash Fix & Mode-Switch Buffering Dialog)
 

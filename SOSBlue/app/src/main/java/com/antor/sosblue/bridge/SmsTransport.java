@@ -38,6 +38,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import android.content.SharedPreferences;
+
 /**
  * SMS-based fallback transport for when neither mesh nor F2P is reachable.
  *
@@ -109,14 +111,43 @@ public class SmsTransport {
 
     /**
      * Set of SMS inbox row IDs already processed by {@link #scanInbox()}.
-     * Persisted across calls so a re-scan doesn't re-deliver the same
-     * envelope. Cleared automatically when the process dies.
+     * Persisted in SharedPreferences so a re-scan across process restarts
+     * doesn't re-deliver old DR1 envelopes from a previous session.
      */
     private final Set<Long> processedInboxIds =
             Collections.newSetFromMap(new ConcurrentHashMap<Long, Boolean>());
 
+    /**
+     * Set of correlation IDs (first 10-base32 chars of payload SHA-256)
+     * already processed via the {@code SMS_RECEIVED} broadcast path.
+     * Shared between the broadcast receiver and {@link #scanInbox()} so
+     * a message that arrived via the live broadcast isn't re-dispatched
+     * when the inbox poll runs moments later.
+     */
+    private final Set<String> processedCorrelationIds =
+            Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
+
+    /** SharedPreferences for persisting processed inbox row IDs. */
+    private final SharedPreferences prefs;
+    private static final String PREFS_NAME = "sms_transport_state";
+    private static final String KEY_PROCESSED_IDS = "processed_inbox_ids";
+
+    /** Max processed inbox IDs to track — prevents unbounded growth. */
+    private static final int MAX_PROCESSED_IDS = 2000;
+
     public SmsTransport(Context context) {
         this.appContext = context.getApplicationContext();
+        this.prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        // Restore processed inbox IDs from SharedPreferences
+        String saved = prefs.getString(KEY_PROCESSED_IDS, "");
+        if (saved != null && !saved.isEmpty()) {
+            for (String id : saved.split(",")) {
+                try {
+                    processedInboxIds.add(Long.parseLong(id.trim()));
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+        Log.d(TAG, "Restored " + processedInboxIds.size() + " processed inbox IDs from prefs");
     }
 
     /**
@@ -307,6 +338,21 @@ public class SmsTransport {
         String full = body.toString();
         Log.d(TAG, "onSmsReceived len=" + full.length() + " head="
                 + (full.length() > 24 ? full.substring(0, 24) + "…" : full));
+
+        // Extract correlation ID for dedup before dispatch
+        if (full.startsWith(MAGIC + ":")) {
+            String[] seg = full.split(":", 3);
+            if (seg.length >= 2) {
+                String corrId = seg[1];
+                if (processedCorrelationIds.contains(corrId)) {
+                    Log.d(TAG, "onSmsReceived: correlation id " + corrId
+                            + " already processed — dropping duplicate");
+                    return;
+                }
+                processedCorrelationIds.add(corrId);
+            }
+        }
+
         dispatchEnvelopeFromBody(full);
     }
 
@@ -358,6 +404,22 @@ public class SmsTransport {
                     if (processedInboxIds.contains(id)) continue;
                     String body = cursor.getString(bodyCol);
                     if (body == null) continue;
+
+                    // ── Cross-check against correlation IDs already
+                    //    handled by the live broadcast path. The broadcast
+                    //    fires before scanInbox runs, so we skip messages
+                    //    whose correlation ID was already dispatched.
+                    if (body.startsWith(MAGIC + ":")) {
+                        String[] seg = body.split(":", 3);
+                        if (seg.length >= 2 && processedCorrelationIds.contains(seg[1])) {
+                            Log.v(TAG, "scanInbox: skipping id=" + id
+                                    + " — already dispatched via broadcast");
+                            processedInboxIds.add(id);
+                            if (id > newestId) newestId = id;
+                            continue;
+                        }
+                    }
+
                     try {
                         dispatchEnvelopeFromBody(body);
                         processedInboxIds.add(id);
@@ -369,6 +431,10 @@ public class SmsTransport {
                 }
                 Log.i(TAG, "scanInbox: processed " + processed
                         + " new envelope(s), newestId=" + newestId);
+
+                // ── Persist processed inbox IDs so old messages are not
+                //    re-processed after a process restart.
+                persistProcessedIds();
             } catch (SecurityException se) {
                 Log.w(TAG, "scanInbox query failed: " + se.getMessage());
             } catch (Throwable t) {
@@ -396,6 +462,17 @@ public class SmsTransport {
         String[] seg = full.split(":", 3);
         if (seg.length != 3) return;
         String correlationId = seg[1];
+
+        // ── Global correlation ID dedup: skip if this envelope has
+        //    already been dispatched via either the broadcast receiver
+        //    or the inbox scan path.
+        if (processedCorrelationIds.contains(correlationId)) {
+            Log.v(TAG, "dispatchEnvelope: correlation id " + correlationId
+                    + " already processed — dropping duplicate");
+            return;
+        }
+        processedCorrelationIds.add(correlationId);
+
         String encoded = seg[2];
         byte[] envelopeBytes;
         try {
@@ -435,6 +512,38 @@ public class SmsTransport {
             } catch (Throwable t) {
                 Log.w(TAG, "envelope listener threw: " + t.getMessage());
             }
+        }
+    }
+
+    /**
+     * Persists the set of processed inbox row IDs to SharedPreferences so
+     * old DR1 messages are not re-processed after a process restart.
+     * Called after every inbox scan completes.
+     */
+    private void persistProcessedIds() {
+        try {
+            // Trim to the most recent MAX_PROCESSED_IDS IDs
+            if (processedInboxIds.size() > MAX_PROCESSED_IDS) {
+                java.util.ArrayList<Long> sorted = new java.util.ArrayList<>(processedInboxIds);
+                java.util.Collections.sort(sorted);
+                // Keep only the largest (most recent) MAX_PROCESSED_IDS IDs
+                java.util.List<Long> toRemove = sorted.subList(0, sorted.size() - MAX_PROCESSED_IDS);
+                for (Long id : toRemove) {
+                    processedInboxIds.remove(id);
+                }
+                Log.d(TAG, "Trimmed processedInboxIds to " + MAX_PROCESSED_IDS
+                        + " (removed " + toRemove.size() + " old IDs)");
+            }
+
+            StringBuilder sb = new StringBuilder();
+            for (Long id : processedInboxIds) {
+                if (sb.length() > 0) sb.append(",");
+                sb.append(id);
+            }
+            prefs.edit().putString(KEY_PROCESSED_IDS, sb.toString()).apply();
+            Log.d(TAG, "Persisted " + processedInboxIds.size() + " processed inbox IDs");
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to persist processed inbox IDs", e);
         }
     }
 

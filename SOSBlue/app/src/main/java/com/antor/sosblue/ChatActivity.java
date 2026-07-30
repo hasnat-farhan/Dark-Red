@@ -500,8 +500,8 @@ public class ChatActivity extends AppCompatActivity {
                             if (isMeshBroadcast) {
                                 // Group notification with per-sender attribution
                                 nh.notifyGroupMessage(
-                                        "sosblue_mesh_broadcast",   // groupId
-                                        "SOSBlue Mesh",             // groupName
+                                        "offline36_mesh_broadcast",   // groupId
+                                        "Offline-36 Mesh",             // groupName
                                         sender,                     // senderPhone
                                         sender,                     // senderName (lookupDisplayName resolves it)
                                         text);
@@ -558,10 +558,28 @@ public class ChatActivity extends AppCompatActivity {
                     String myPhoneRaw = UserIdentity.getPhoneNumber(ChatActivity.this);
                     if (myPhoneRaw == null) return;
                     String myPhone = UserIdentity.normalizePhoneNumber(myPhoneRaw);
-                    if (!myPhone.equals(recipientPhone)) return; // not for us
+                    // Normalize recipientPhone too so the comparison is robust
+                    // even if the sender stored a differently-formatted number.
+                    String normalizedRecipient = UserIdentity.normalizePhoneNumber(recipientPhone);
+                    if (normalizedRecipient == null || !myPhone.equals(normalizedRecipient)) {
+                        Log.d("ChatActivity", "SMS envelope not addressed to us (to="
+                                + recipientPhone + "), dropping");
+                        return;
+                    }
                     if (senderPhone == null || encryptedPayload == null) return;
 
                     byte[] decryptedBytes = MessageEncryptor.decrypt(myPhone, encryptedPayload);
+
+                    // ── Check if this is an SMS media chunk ───────────────
+                    com.antor.sosblue.bridge.SmsMediaHelper.DecodedChunk smsMediaChunk =
+                            com.antor.sosblue.bridge.SmsMediaHelper.tryDecode(decryptedBytes);
+                    if (smsMediaChunk != null) {
+                        // Route to media chunk reassembly
+                        handleSmsMediaChunk(senderPhone, myPhone, smsMediaChunk);
+                        return;
+                    }
+
+                    // ── Regular text message ────────────────────────────
                     String text = new String(decryptedBytes, java.nio.charset.StandardCharsets.UTF_8);
                     String sender = UserIdentity.normalizePhoneNumber(senderPhone);
                     final String finalSender = sender != null ? sender : senderPhone;
@@ -1168,7 +1186,7 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
                     // ── F2P: Use phone number as node ID ──
                     String myPhone = UserIdentity.getPhoneNumber(ChatActivity.this);
                     if (myPhone == null) {
-                        myPhone = "sosblue-" + System.currentTimeMillis();
+                        myPhone = "offline36-" + System.currentTimeMillis();
                     }
                     EngineConfig config = EngineConfig.builder()
                             .nodeId(myPhone)
@@ -1585,6 +1603,63 @@ markMessageStatus(outbound, MessageModel.STATUS_FAILED);
         }
     }
 
+    /**
+     * Processes an incoming SMS media chunk: decrypts the F2P envelope,
+     * parses the embedded media metadata via {@link SmsMediaHelper},
+     * feeds it into the {@link MediaChunker} reassembly buffer, and
+     * renders the final media message when all chunks have arrived.
+     * <p>
+     * This is the SMS counterpart of {@link #handleMediaChunk} which
+     * handles the same flow for UDP-delivered chunks.
+     * </p>
+     */
+    private void handleSmsMediaChunk(String senderPhone, String myPhone,
+                                      com.antor.sosblue.bridge.SmsMediaHelper.DecodedChunk decoded) {
+        try {
+            // Build a MediaChunk and feed it to the reassembler
+            com.antor.sosblue.media.MediaChunker.MediaChunk chunk = decoded.toMediaChunk();
+            byte[] assembled = com.antor.sosblue.media.MediaChunker.feedChunk(chunk);
+
+            if (assembled != null) {
+                // All chunks received — save to local cache and render
+                java.io.File cacheDir = new java.io.File(getCacheDir(), "media_received");
+                cacheDir.mkdirs();
+                java.io.File outFile = new java.io.File(cacheDir,
+                        decoded.transferId + "_" + decoded.fileName);
+                java.io.FileOutputStream fos = new java.io.FileOutputStream(outFile);
+                fos.write(assembled);
+                fos.close();
+
+                android.net.Uri savedUri = android.net.Uri.fromFile(outFile);
+                long fileSize = assembled.length;
+
+                android.util.Log.i("ChatActivity",
+                        "SMS media reassembled: " + decoded.fileName
+                                + " (" + fileSize + " bytes)");
+
+                // Render on UI thread
+                final android.net.Uri mediaUri = savedUri;
+                runOnUiThread(() -> {
+                    MessageModel inbound = new MessageModel(
+                            "", false, senderPhone, myPhone,
+                            decoded.contentType, mediaUri.toString(),
+                            decoded.mimeType, fileSize,
+                            MessageModel.TRANSPORT_SMS, MessageModel.STATUS_DELIVERED);
+                    addMessage(inbound);
+                });
+            } else {
+                // Partial — log progress
+                int received = com.antor.sosblue.media.MediaChunker
+                        .getReceivedChunkCount(decoded.transferId);
+                android.util.Log.d("ChatActivity",
+                        "SMS media chunk " + received + "/" + decoded.totalChunks
+                                + " for " + decoded.fileName);
+            }
+        } catch (Exception e) {
+            android.util.Log.e("ChatActivity", "Failed to process SMS media chunk", e);
+        }
+    }
+
     // ---------------------------------------------------------------
     //  Media picker → send
     // ---------------------------------------------------------------
@@ -1933,7 +2008,7 @@ markMessageStatus(outbound, MessageModel.STATUS_FAILED);
 
                 // Extract filename from path
                 String fileName = path.substring(path.lastIndexOf('/') + 1);
-                if (fileName.isEmpty()) fileName = "SOSBlue_media_" + System.currentTimeMillis();
+                if (fileName.isEmpty()) fileName = "Offline36_media_" + System.currentTimeMillis();
 
                 File mediaFile = new File(path);
                 if (!mediaFile.exists()) {
@@ -2130,10 +2205,10 @@ markMessageStatus(outbound, MessageModel.STATUS_FAILED);
                     ? Environment.DIRECTORY_MOVIES
                     : Environment.DIRECTORY_PICTURES;
             File mediaDir = Environment.getExternalStoragePublicDirectory(dirType);
-            File sosblueDir = new File(mediaDir, "SOSBlue");
-            sosblueDir.mkdirs();
+            File offline36Dir = new File(mediaDir, "Offline-36");
+            offline36Dir.mkdirs();
 
-            File outFile = new File(sosblueDir, fileName);
+            File outFile = new File(offline36Dir, fileName);
 
             try (java.io.FileOutputStream fos = new java.io.FileOutputStream(outFile)) {
                 fos.write(fileBytes);

@@ -30,7 +30,7 @@ public final class F2PNewsPacket {
 
     /** Transport tier used for this news broadcast. */
     public enum TransportType {
-        SOSBLUE_MESH("SOSBlue Mesh"),
+        SOSBLUE_MESH("Offline-36 Mesh"),
         F2P_SERVERLESS("F2P"),
         SMS_FALLBACK("SMS");
 

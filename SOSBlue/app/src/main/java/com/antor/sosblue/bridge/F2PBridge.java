@@ -1067,7 +1067,26 @@ public class F2PBridge {
                         : isImage ? com.antor.sosblue.MessageModel.TYPE_IMAGE
                         : com.antor.sosblue.MessageModel.TYPE_TEXT;
 
-                // Split file into chunks
+                // ── SMS media: check size BEFORE chunking to avoid waste ──
+                if (selectedMode == TransportMode.SMS_FALLBACK) {
+                    long fileSize = com.antor.sosblue.media.MediaChunker.getFileSize(context, mediaUri);
+                    if (fileSize > SmsMediaHelper.MAX_SMS_FILE_SIZE) {
+                        String errMsg = "File too large for SMS (" + fileSize
+                                + " bytes). Maximum is " + SmsMediaHelper.MAX_SMS_FILE_SIZE + " bytes.";
+                        Log.e(TAG, errMsg);
+                        postFailed(listener, "", errMsg);
+                        return;
+                    }
+                    if (!TransportMode.SMS_FALLBACK.isAvailable(appContext)) {
+                        postFailed(listener, "", "SMS not available on this device");
+                        return;
+                    }
+                    if (smsTransport == null) {
+                        smsTransport = new SmsTransport(appContext);
+                    }
+                }
+
+                // Split file into chunks (only reached if not SMS or size OK)
                 com.antor.sosblue.media.MediaChunker.MediaChunk[] chunks =
                         com.antor.sosblue.media.MediaChunker.split(context, mediaUri, fileName, mimeType);
 
@@ -1078,7 +1097,72 @@ public class F2PBridge {
 
                 String transferId = chunks[0].transferId;
 
-                // Dispatch each chunk as an encrypted F2P signal
+                if (selectedMode == TransportMode.SMS_FALLBACK) {
+                    // ── SMS media chunking with 10 KB limit ────────────
+                    final java.util.concurrent.atomic.AtomicInteger smsSentCount =
+                            new java.util.concurrent.atomic.AtomicInteger(0);
+                    final java.util.concurrent.atomic.AtomicBoolean smsFailed =
+                            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+                    for (int i = 0; i < chunks.length; i++) {
+                        com.antor.sosblue.media.MediaChunker.MediaChunk chunk = chunks[i];
+
+                        // Encode chunk metadata + data into binary format
+                        byte[] mediaPayload = SmsMediaHelper.encodeChunk(chunk, contentType);
+
+                        // Encrypt the complete media payload
+                        byte[] encryptedPayload = MessageEncryptor.encrypt(
+                                normalizedRecipient, mediaPayload);
+                        byte[] nonce = MessageEncryptor.generateNonce();
+
+                        F2PMessage f2pMsg = new F2PMessage(
+                                senderPhone, normalizedRecipient, encryptedPayload,
+                                System.currentTimeMillis(), nonce
+                        );
+
+                        final int sent = i + 1;
+                        final String tid = transferId;
+                        final int total = chunks.length;
+                        smsTransport.sendEnvelope(f2pMsg,
+                                new SmsTransport.OnSmsSendListener() {
+                                    @Override
+                                    public void onSent() {
+                                        Log.d(TAG, "SMS media chunk " + sent
+                                                + "/" + total + " sent");
+                                        if (listener != null) {
+                                            new android.os.Handler(
+                                                    android.os.Looper.getMainLooper())
+                                                    .post(() -> listener.onProgress(
+                                                            tid, sent, total));
+                                        }
+                                        // Fire onComplete when all chunks have sent
+                                        if (smsSentCount.incrementAndGet() == total
+                                                && !smsFailed.get()) {
+                                            if (listener != null) {
+                                                new android.os.Handler(
+                                                        android.os.Looper.getMainLooper())
+                                                        .post(() -> listener.onComplete(
+                                                                tid, null));
+                                            }
+                                        }
+                                    }
+                                    @Override
+                                    public void onFailed(String reason) {
+                                        Log.e(TAG, "SMS media chunk " + sent
+                                                + "/" + total + " failed: " + reason);
+                                        if (smsFailed.compareAndSet(false, true)) {
+                                            postFailed(listener, tid, reason);
+                                        }
+                                    }
+                                });
+                    }
+
+                    Log.i(TAG, "SMS media send dispatched: " + fileName
+                            + " (" + chunks.length + " chunks)");
+                    return;
+                }
+
+                // ── Standard F2P/Mesh: broadcast each chunk via UDP ──
                 for (int i = 0; i < chunks.length; i++) {
                     com.antor.sosblue.media.MediaChunker.MediaChunk chunk = chunks[i];
 

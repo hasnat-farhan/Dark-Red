@@ -20,7 +20,7 @@ import com.antor.sosblue.R;
  */
 public enum TransportMode {
 
-    SOSBLUE_MESH("SOSBlue Mesh", R.drawable.nearby),
+    SOSBLUE_MESH("Offline-36 Mesh", R.drawable.nearby),
     F2P_SERVERLESS("F2P Serverless", R.drawable.search),
     SMS_FALLBACK("SMS Relay", R.drawable.ic_sms);
 
