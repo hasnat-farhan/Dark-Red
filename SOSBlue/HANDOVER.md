@@ -4,7 +4,7 @@
 **Last Build:** `assembleDebug` — **BUILD SUCCESSFUL** (verified Jul 30, 2026)
 **Lint:** 183 warnings, **0 errors** (down from 221)
 **Engine Tests:** 17/17 passed (7 Integration + 5 Routing + 5 Security — verified Jul 30, 2026)
-**Latest Session:** Transport Badge on Inbox Conversation Cards (Jul 30, 2026)
+**Latest Session:** Crash Prevention, Media Chunk Integrity & Bluetooth/Wi-Fi Permissions (Jul 30, 2026)
 
 ---
 
@@ -286,6 +286,14 @@ No code changes — re-ran engine tests (17/17 passed) and `assembleDebug` (BUIL
 ---
 
 ## 5. Files Modified
+
+### Session 19-20 (Media Chunk Integrity, Bluetooth/Wi-Fi Permissions & Crash Prevention Buffering)
+
+| File | What Changed |
+|------|-------------|
+| `MediaChunker.java` | **Added public `computeChecksum(byte[])`** — Exposes the internal `sha256()` method so `ChatActivity.handleMediaChunk()` can compute and pass a real checksum instead of an empty byte array for received media chunks. Fixes chunk integrity validation. |
+| `ChatActivity.java` | **Major crash prevention overhaul:** Added `isModeSwitching` flag + `currentTransportMode` field to prevent re-entrant mode switch calls. Rewrote `onTransportModeChanged()` with try-catch-finally, null-safe guards on all view references, and engine stop when leaving F2P mode (fixes stale-engine leak). Added `meshPermissionLauncher` field + registration requesting `BLUETOOTH_SCAN`/`BLUETOOTH_CONNECT` (API 31+) or legacy `BLUETOOTH`/`BLUETOOTH_ADMIN`. Added `requestMeshPermissionsIfNeeded()` method. Calls `requestMeshPermissionsIfNeeded()` from `onTransportModeChanged()` for SOSBLUE_MESH mode. Added buffering progress spinner for ALL mode transitions. Added null-safe try-catch in `refreshPeerBar()`, `sendCurrentMessage()`, and `onMediaSelected()`. Fixed duplicate `requestWifiPermissionsIfNeeded()` declaration and duplicate permission launcher blocks. |
+| `ConversationAdapter.java` | **Removed unused import** — Removed `ContextCompat` import flagged by code review. |
 
 ### Session 18 (Transport Badge on Inbox Conversation Cards)
 
@@ -635,6 +643,14 @@ When a P2P peer is selected:
 ---
 
 ## 7. Key Features Implemented
+
+### ✅ Media Chunk Integrity & Bluetooth/Wi-Fi Permissions (Session 19-20)
+- **Media chunk checksum fix** — `MediaChunker.computeChecksum()` now exposes the internal SHA-256 hasher so received chunks are validated with a real checksum instead of an empty byte array. Fixes broken image/video reconstruction over F2P.
+- **Bluetooth + Wi-Fi runtime permissions** — When the user selects SOSBlue Mesh mode, the app now requests `BLUETOOTH_SCAN` + `BLUETOOTH_CONNECT` (API 31+) or legacy `BLUETOOTH` + `BLUETOOTH_ADMIN` (pre-API 31). This ensures the peer discovery mechanisms work without silent failures.
+- **Re-entrant mode switch guard** — `onTransportModeChanged()` now uses `isModeSwitching` flag + `currentTransportMode` field to prevent nested or redundant mode transitions that could crash the activity.
+- **Engine stop on mode leave** — When switching away from F2P Serverless mode, the F2P engine is now properly stopped and `engineReady` reset — fixes a resource leak where the engine kept running in the background.
+- **Buffering spinner for all transitions** — Every mode switch now shows a loading progress spinner until the transition completes, with a Snackbar error fallback if the transition fails.
+- **Null-safe guards across the board** — Bridge, peer bar adapter, peer count badge, and buffering view are all null-checked before use; `sendCurrentMessage()` and `onMediaSelected()` show Snackbar errors instead of crashing when bridge is null.
 
 ### ✅ Transport Badge on Inbox Conversation Cards (Session 18)
 - **Colored transport chip on each conversation card** — A small pill badge (18dp tall, 9sp text) now appears between the display name and timestamp on every conversation card in the inbox, showing which transport tier was used for the last message.

@@ -62,6 +62,12 @@ public class ChatActivity extends AppCompatActivity {
     private boolean engineReady;
     private boolean f2pRequested;
 
+    /** Guards against re-entrant mode switching while a transition is in progress. */
+    private boolean isModeSwitching = false;
+
+    /** Tracks the currently active transport mode to detect same-mode calls. */
+    private TransportMode currentTransportMode = null;
+
     /**
      * Locally-created {@link com.antor.sosblue.bridge.SmsTransport} — only
      * non-null when ChatActivity booted the carrier ahead of any SMS send
@@ -74,6 +80,9 @@ public class ChatActivity extends AppCompatActivity {
 
     /** Permission launcher for Wi-Fi/location permissions needed on Android 11 (Oppo). */
     private ActivityResultLauncher<String[]> wifiPermissionLauncher;
+
+    /** Permission launcher for Bluetooth + Wi-Fi (Mesh mode). */
+    private ActivityResultLauncher<String[]> meshPermissionLauncher;
 
     /** Permission launcher for SMS (SEND_SMS + RECEIVE_SMS + READ_PHONE_STATE). */
     private ActivityResultLauncher<String[]> smsPermissionLauncher;
@@ -179,16 +188,32 @@ public class ChatActivity extends AppCompatActivity {
                     }
                 });
 
-        // ── Runtime permission launcher for POST_NOTIFICATIONS (Android 13+) ──
-        notificationPermissionLauncher = registerForActivityResult(
-                new ActivityResultContracts.RequestPermission(), granted -> {
-                    if (granted) {
-                        Log.i("ChatActivity", "POST_NOTIFICATIONS granted");
+        // ── Runtime permission launcher for Bluetooth + Wi-Fi (Mesh mode) ──
+        meshPermissionLauncher = registerForActivityResult(
+                new ActivityResultContracts.RequestMultiplePermissions(), result -> {
+                    boolean allGranted = true;
+                    StringBuilder denied = new StringBuilder();
+                    for (java.util.Map.Entry<String, Boolean> entry : result.entrySet()) {
+                        if (!entry.getValue()) {
+                            allGranted = false;
+                            if (denied.length() > 0) denied.append(", ");
+                            denied.append(entry.getKey());
+                        }
+                    }
+                    if (!allGranted) {
+                        Log.w("ChatActivity", "Mesh permissions denied: " + denied);
+                        View __root = findViewById(R.id.root);
+                        if (__root != null) {
+                            Snackbar.make(__root,
+                                    "Bluetooth & Wi-Fi permissions needed for Mesh mode",
+                                    Snackbar.LENGTH_LONG).show();
+                        }
                     } else {
-                        Log.w("ChatActivity", "POST_NOTIFICATIONS denied — notifications disabled");
+                        Log.i("ChatActivity", "All Bluetooth/Wi-Fi mesh permissions granted");
+                        // Re-fire transport mode now that permissions are confirmed
+                        onTransportModeChanged(TransportMode.SOSBLUE_MESH);
                     }
                 });
-        requestNotificationPermissionIfNeeded();
 
         // ── Runtime permission launcher for SMS carrier ──────────────
         // SEND_SMS + RECEIVE_SMS are both runtime-dangerous on API 23+
@@ -577,7 +602,18 @@ public class ChatActivity extends AppCompatActivity {
         }
 
         transportRadioGroup.setOnCheckedChangeListener((group, checkedId) -> {
+            // ── Guard: skip if we're in the middle of a mode switch ──
+            // This prevents re-entrant calls when revertRadioToLastSaved()
+            // programmatically checks a radio button while processing
+            // a previous user tap.
+            if (isModeSwitching) {
+                return;
+            }
             TransportMode mode = radioIdToTransportMode(checkedId);
+            // ── Guard: skip if mode hasn't actually changed ──
+            if (mode == currentTransportMode) {
+                return;
+            }
             // ── SMS gate: runtime permission request on first selection ──
             // SEND_SMS + RECEIVE_SMS + READ_PHONE_STATE are all dangerous,
             // so the OS won't surface them at install time — we have to
@@ -790,57 +826,165 @@ public class ChatActivity extends AppCompatActivity {
     // ---------------------------------------------------------------
 
     private void onTransportModeChanged(TransportMode mode) {
-        if (mode == TransportMode.SOSBLUE_MESH) {
-            // Show peer bar with nearby devices
-            peerBarCard.setVisibility(View.VISIBLE);
-            refreshPeerBar();
-        } else if (mode == TransportMode.SMS_FALLBACK) {
-            // ── SMS carrier path ─────────────────────────────────────
-            peerBarCard.setVisibility(View.GONE);
-            bufferingProgress.setVisibility(View.GONE);
-            com.antor.sosblue.bridge.SmsTransport sms = bridge.getSmsTransport();
-            if (sms == null) {
-                sms = new com.antor.sosblue.bridge.SmsTransport(this);
-                bridge.setSmsTransport(sms);
-            }
-            sms.register();
-            pendingSmsTransport = sms;
-            ToastUtils.showShort(this, "SMS Relay ready");
-        } else {
-            // F2P Serverless — hide peer bar, show buffering spinner
-            peerBarCard.setVisibility(View.GONE);
-            f2pRequested = true;
+        // ── Guard: prevent re-entrant calls during an active transition ──
+        if (isModeSwitching) {
+            Log.d("ChatActivity", "Mode switch already in progress, deferring " + mode);
+            return;
+        }
+        // ── Guard: no-op if mode hasn't actually changed ──
+        if (mode == currentTransportMode) {
+            return;
+        }
+        isModeSwitching = true;
+        final TransportMode previousMode = currentTransportMode;
+        currentTransportMode = mode;
 
-            if (!engineReady) {
+        try {
+            // ── Show loading/buffering overlay for ALL transitions ──
+            if (bufferingProgress != null) {
                 bufferingProgress.setVisibility(View.VISIBLE);
+            }
 
-                // ── F2P: Use phone number as node ID for routing/encryption ──
-                String myPhone = UserIdentity.getPhoneNumber(ChatActivity.this);
-                EngineConfig config = EngineConfig.builder()
-                        .nodeId(myPhone != null ? myPhone : "sosblue-" + System.currentTimeMillis())
-                        .build();
-
-                bridge.startEngineAsync(config, new F2PBridge.OnEngineStartListener() {
-                    @Override
-                    public void onEngineStarted() {
-                        engineReady = true;
-                        bufferingProgress.setVisibility(View.GONE);
-                        refreshPeerBar();
-                        ToastUtils.showShort(ChatActivity.this, "F2P Serverless ready");
+            // ── Stop F2P engine if we are LEAVING F2P mode ──
+            // This prevents the engine from running in the background
+            // when the user switches to Mesh or SMS, freeing resources
+            // and avoiding stale socket state.
+            if (previousMode == TransportMode.F2P_SERVERLESS && engineReady) {
+                Log.i("ChatActivity", "Stopping F2P engine on mode switch to " + mode);
+                try {
+                    if (bridge != null) {
+                        bridge.stopEngine();
                     }
+                } catch (Exception e) {
+                    Log.w("ChatActivity", "Error stopping engine during mode switch", e);
+                }
+                engineReady = false;
+                f2pRequested = false;
+            }
 
-                    @Override
-                    public void onEngineError(int statusCode, String message) {
-                        bufferingProgress.setVisibility(View.GONE);
-                        View __root = findViewById(R.id.root);
-                        if (__root != null) {
-                            Snackbar.make(__root,
-                                    "F2P engine error: " + message,
-                                    Snackbar.LENGTH_LONG).show();
+            if (mode == TransportMode.SOSBLUE_MESH) {
+                // ── Mesh mode ────────────────────────────────────────────
+                // Request Bluetooth + Wi-Fi runtime permissions
+                requestMeshPermissionsIfNeeded();
+
+                // Show peer bar with nearby devices
+                if (peerBarCard != null) {
+                    peerBarCard.setVisibility(View.VISIBLE);
+                }
+                refreshPeerBar();
+
+                // Remove progress indication
+                if (bufferingProgress != null) {
+                    bufferingProgress.setVisibility(View.GONE);
+                }
+
+            } else if (mode == TransportMode.SMS_FALLBACK) {
+                // ── SMS carrier path ─────────────────────────────────────
+                if (peerBarCard != null) {
+                    peerBarCard.setVisibility(View.GONE);
+                }
+
+                // Ensure SMS transport is available
+                if (bridge != null) {
+                    com.antor.sosblue.bridge.SmsTransport sms = bridge.getSmsTransport();
+                    if (sms == null) {
+                        try {
+                            sms = new com.antor.sosblue.bridge.SmsTransport(this);
+                            bridge.setSmsTransport(sms);
+                        } catch (Exception e) {
+                            Log.w("ChatActivity", "Failed to create SMS transport", e);
                         }
                     }
-                });
+                    if (sms != null) {
+                        try {
+                            sms.register();
+                        } catch (Exception e) {
+                            Log.w("ChatActivity", "Failed to register SMS transport", e);
+                        }
+                    }
+                    pendingSmsTransport = sms;
+                }
+
+                if (bufferingProgress != null) {
+                    bufferingProgress.setVisibility(View.GONE);
+                }
+                ToastUtils.showShort(this, "SMS Relay ready");
+
+            } else if (mode == TransportMode.F2P_SERVERLESS) {
+                // ── F2P Serverless ───────────────────────────────────────
+                if (peerBarCard != null) {
+                    peerBarCard.setVisibility(View.GONE);
+                }
+                f2pRequested = true;
+
+                if (!engineReady) {
+                    if (bufferingProgress != null) {
+                        bufferingProgress.setVisibility(View.VISIBLE);
+                    }
+
+                    // ── F2P: Use phone number as node ID ──
+                    String myPhone = UserIdentity.getPhoneNumber(ChatActivity.this);
+                    if (myPhone == null) {
+                        myPhone = "sosblue-" + System.currentTimeMillis();
+                    }
+                    EngineConfig config = EngineConfig.builder()
+                            .nodeId(myPhone)
+                            .build();
+
+                    if (bridge != null) {
+                        bridge.startEngineAsync(config, new F2PBridge.OnEngineStartListener() {
+                            @Override
+                            public void onEngineStarted() {
+                                engineReady = true;
+                                if (bufferingProgress != null) {
+                                    bufferingProgress.setVisibility(View.GONE);
+                                }
+                                refreshPeerBar();
+                                ToastUtils.showShort(ChatActivity.this, "F2P Serverless ready");
+                            }
+
+                            @Override
+                            public void onEngineError(int statusCode, String message) {
+                                if (bufferingProgress != null) {
+                                    bufferingProgress.setVisibility(View.GONE);
+                                }
+                                View __root = findViewById(R.id.root);
+                                if (__root != null) {
+                                    Snackbar.make(__root,
+                                            "F2P engine error: " + message,
+                                            Snackbar.LENGTH_LONG).show();
+                                }
+                            }
+                        });
+                    } else {
+                        // Bridge is null — shouldn't happen, but be safe
+                        if (bufferingProgress != null) {
+                            bufferingProgress.setVisibility(View.GONE);
+                        }
+                        Log.e("ChatActivity", "Cannot start F2P engine: bridge is null");
+                    }
+                } else {
+                    // Engine already running
+                    if (bufferingProgress != null) {
+                        bufferingProgress.setVisibility(View.GONE);
+                    }
+                }
             }
+        } catch (Exception e) {
+            Log.e("ChatActivity", "Error during mode switch to " + mode, e);
+            if (bufferingProgress != null) {
+                bufferingProgress.setVisibility(View.GONE);
+            }
+            View __root = findViewById(R.id.root);
+            if (__root != null) {
+                Snackbar.make(__root,
+                        "Mode switch failed: " + e.getMessage(),
+                        Snackbar.LENGTH_LONG).show();
+            }
+            // Revert to previous mode tracking on error
+            currentTransportMode = previousMode;
+        } finally {
+            isModeSwitching = false;
         }
     }
 
@@ -851,9 +995,13 @@ public class ChatActivity extends AppCompatActivity {
     private void refreshPeerBar() {
         int knownCount = 0;
         int activeCount = 0;
-        if (engineReady) {
-            knownCount = bridge.getKnownPeerCount();
-            activeCount = bridge.getActiveNodeCount();
+        if (engineReady && bridge != null) {
+            try {
+                knownCount = bridge.getKnownPeerCount();
+                activeCount = bridge.getActiveNodeCount();
+            } catch (Exception e) {
+                Log.w("ChatActivity", "Failed to get peer counts", e);
+            }
         }
 
         // Build peer list (simulated from counts)
@@ -864,12 +1012,16 @@ public class ChatActivity extends AppCompatActivity {
             boolean connected = i < activeCount;
             devices.add(new PeerDevice("peer-" + i, name, signal, connected));
         }
-        peerBarAdapter.updatePeers(devices);
+
+        if (peerBarAdapter != null) {
+            peerBarAdapter.updatePeers(devices);
+        }
 
         // Update badge
-        String badgeText = String.valueOf(devices.size());
-        peerCountBadge.setText(badgeText);
-        peerCountBadge.setVisibility(View.VISIBLE);
+        if (peerCountBadge != null) {
+            peerCountBadge.setText(String.valueOf(devices.size()));
+            peerCountBadge.setVisibility(View.VISIBLE);
+        }
     }
 
     // ---------------------------------------------------------------
@@ -938,6 +1090,17 @@ public class ChatActivity extends AppCompatActivity {
         showSendProgress(true);
 
         // 6. Dispatch async using the entered recipient phone number
+        if (bridge == null) {
+            showSendProgress(false);
+            Log.e("ChatActivity", "Cannot send message: bridge is null");
+            View __root = findViewById(R.id.root);
+            if (__root != null) {
+                Snackbar.make(__root,
+                        "Cannot send: bridge not initialized",
+                        Snackbar.LENGTH_LONG).show();
+            }
+            return;
+        }
         bridge.sendMessageAsync(messageText, recipientPhone, mode,
                 new F2PBridge.OnMessageSendListener() {
                     @Override
@@ -985,12 +1148,16 @@ public class ChatActivity extends AppCompatActivity {
             if (fileName == null) fileName = "unknown";
             final String resolvedMimeType = (mimeType != null) ? mimeType : "application/octet-stream";
 
+            // Compute checksum for integrity verification
+            byte[] checksum = com.antor.sosblue.media.MediaChunker
+                    .computeChecksum(decryptedChunkData);
+
             // Build a MediaChunk and feed it to the reassembler
             com.antor.sosblue.media.MediaChunker.MediaChunk chunk =
                     new com.antor.sosblue.media.MediaChunker.MediaChunk(
                             transferId, chunkIndex, totalChunks,
                             fileName, resolvedMimeType, decryptedChunkData,
-                            new byte[0] // checksum not needed for received chunks
+                            checksum
                     );
 
             byte[] assembled = com.antor.sosblue.media.MediaChunker.feedChunk(chunk);
@@ -1042,9 +1209,9 @@ public class ChatActivity extends AppCompatActivity {
      * Renders a local preview immediately, then dispatches the encrypted
      * chunks asynchronously via the F2P bridge.
      */
-    // ---------------------------------------------------------------
+    // ----------------------------------------------------------------
     //  Runtime permission handling (Android 11 / Oppo crash fix)
-    // ---------------------------------------------------------------
+    // ----------------------------------------------------------------
 
     /**
      * Requests Wi-Fi/location permissions at runtime if not already granted.
@@ -1082,6 +1249,59 @@ public class ChatActivity extends AppCompatActivity {
 
         if (!needed.isEmpty()) {
             wifiPermissionLauncher.launch(needed.toArray(new String[0]));
+        }
+    }
+
+    // ----------------------------------------------------------------
+    //  Mesh (Bluetooth + Wi-Fi) permission helpers
+    // ----------------------------------------------------------------
+
+    /**
+     * Requests Bluetooth + Wi-Fi runtime permissions needed for Mesh mode.
+     * <p>
+     * On Android 12+ (API 31+), {@code BLUETOOTH_SCAN} and
+     * {@code BLUETOOTH_CONNECT} are required for BLE scanning and
+     * Wi-Fi Direct peer discovery. On Android 10-11, the older
+     * {@code BLUETOOTH} and {@code BLUETOOTH_ADMIN} permissions
+     * apply, but Wi-Fi location (ACCESS_FINE_LOCATION) is handled
+     * separately via {@link #requestWifiPermissionsIfNeeded()}.
+     * </p>
+     * <p>
+     * This method launches the dedicated mesh permission launcher
+     * which is registered in {@link #initializedOnCreate()}.
+     * </p>
+     */
+    private void requestMeshPermissionsIfNeeded() {
+        java.util.List<String> needed = new java.util.ArrayList<>();
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // Android 12+ — BLUETOOTH_SCAN + BLUETOOTH_CONNECT
+            if (ContextCompat.checkSelfPermission(this,
+                    Manifest.permission.BLUETOOTH_SCAN)
+                    != PackageManager.PERMISSION_GRANTED) {
+                needed.add(Manifest.permission.BLUETOOTH_SCAN);
+            }
+            if (ContextCompat.checkSelfPermission(this,
+                    Manifest.permission.BLUETOOTH_CONNECT)
+                    != PackageManager.PERMISSION_GRANTED) {
+                needed.add(Manifest.permission.BLUETOOTH_CONNECT);
+            }
+        } else {
+            // Pre-Android 12 — BLUETOOTH + BLUETOOTH_ADMIN
+            if (ContextCompat.checkSelfPermission(this,
+                    Manifest.permission.BLUETOOTH)
+                    != PackageManager.PERMISSION_GRANTED) {
+                needed.add(Manifest.permission.BLUETOOTH);
+            }
+            if (ContextCompat.checkSelfPermission(this,
+                    Manifest.permission.BLUETOOTH_ADMIN)
+                    != PackageManager.PERMISSION_GRANTED) {
+                needed.add(Manifest.permission.BLUETOOTH_ADMIN);
+            }
+        }
+
+        if (!needed.isEmpty()) {
+            meshPermissionLauncher.launch(needed.toArray(new String[0]));
         }
     }
 
@@ -1271,6 +1491,17 @@ public class ChatActivity extends AppCompatActivity {
         TransportMode mode = radioIdToTransportMode(
                 transportRadioGroup.getCheckedRadioButtonId());
 
+        if (bridge == null) {
+            showSendProgress(false);
+            Log.e("ChatActivity", "Cannot send media: bridge is null");
+            View __root = findViewById(R.id.root);
+            if (__root != null) {
+                Snackbar.make(__root,
+                        "Cannot send: bridge not initialized",
+                        Snackbar.LENGTH_LONG).show();
+            }
+            return;
+        }
         bridge.sendMediaAsync(this, uri, recipientPhone, mode, "",
                 new com.antor.sosblue.media.MediaTransferListener() {
                     @Override
