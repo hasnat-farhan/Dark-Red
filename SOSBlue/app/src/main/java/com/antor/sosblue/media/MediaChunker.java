@@ -286,6 +286,14 @@ public final class MediaChunker {
         return path != null ? path : "unknown_file";
     }
 
+    /**
+     * Computes a SHA-256 checksum for arbitrary data.
+     * Used by receivers to construct a correct checksum when reassembling chunks.
+     */
+    public static byte[] computeChecksum(byte[] data) {
+        return sha256(data);
+    }
+
     private static byte[] sha256(byte[] data) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
