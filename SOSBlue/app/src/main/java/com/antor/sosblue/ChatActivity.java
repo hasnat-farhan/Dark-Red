@@ -629,65 +629,15 @@ public class ChatActivity extends AppCompatActivity {
         findViewById(R.id.threeDotIcon).setOnClickListener(v -> {
             android.widget.PopupMenu popup = new android.widget.PopupMenu(ChatActivity.this, v);
             popup.getMenuInflater().inflate(R.menu.top_app_bar_menu, popup.getMenu());
-
-            // Mark the current transport mode as checked
-            TransportMode currentMode = TransportMode.load(ChatActivity.this);
-            switch (currentMode) {
-                case F2P_SERVERLESS:
-                    popup.getMenu().findItem(R.id.menu_transport_f2p).setChecked(true);
-                    break;
-                case SMS_FALLBACK:
-                    popup.getMenu().findItem(R.id.menu_transport_sms).setChecked(true);
-                    break;
-                default:
-                    popup.getMenu().findItem(R.id.menu_transport_mesh).setChecked(true);
-                    break;
-            }
-
             popup.setOnMenuItemClickListener(item -> {
                 int id = item.getItemId();
-                if (id == R.id.menu_chats) {
-                    // Go to conversation inbox
-                    startActivity(new Intent(ChatActivity.this,
-                            com.antor.sosblue.MainActivity.class));
-                    finish();
-                    return true;
-                } else if (id == R.id.menu_news_feed) {
+                if (id == R.id.menu_news_feed) {
                     startActivity(new Intent(ChatActivity.this,
                             com.antor.sosblue.news.NewsFeedActivity.class));
-                    return true;
-                } else if (id == R.id.menu_transport_mesh) {
-                    TransportMode.SOSBLUE_MESH.save(ChatActivity.this);
-                    transportRadioGroup.check(R.id.rb_sosblue_mesh);
-                    onTransportModeChanged(TransportMode.SOSBLUE_MESH);
-                    ToastUtils.showShort(ChatActivity.this,
-                            "Switched to " + TransportMode.SOSBLUE_MESH.getLabel());
-                    return true;
-                } else if (id == R.id.menu_transport_f2p) {
-                    TransportMode.F2P_SERVERLESS.save(ChatActivity.this);
-                    transportRadioGroup.check(R.id.rb_f2p_serverless);
-                    onTransportModeChanged(TransportMode.F2P_SERVERLESS);
-                    ToastUtils.showShort(ChatActivity.this,
-                            "Switched to " + TransportMode.F2P_SERVERLESS.getLabel());
-                    return true;
-                } else if (id == R.id.menu_transport_sms) {
-                    if (!TransportMode.SMS_FALLBACK.isAvailable(ChatActivity.this)) {
-                        ToastUtils.showShort(ChatActivity.this,
-                                R.string.transport_sms_unavailable);
-                        return true;
-                    }
-                    TransportMode.SMS_FALLBACK.save(ChatActivity.this);
-                    transportRadioGroup.check(R.id.rb_sms_fallback);
-                    onTransportModeChanged(TransportMode.SMS_FALLBACK);
-                    ToastUtils.showShort(ChatActivity.this,
-                            "Switched to " + TransportMode.SMS_FALLBACK.getLabel());
                     return true;
                 } else if (id == R.id.menu_settings) {
                     startActivity(new Intent(ChatActivity.this,
                             com.antor.sosblue.settings.SettingsActivity.class));
-                    return true;
-                } else if (id == R.id.menu_about) {
-                    showAboutDialog();
                     return true;
                 }
                 return false;
@@ -819,10 +769,6 @@ public class ChatActivity extends AppCompatActivity {
             refreshPeerBar();
         } else if (mode == TransportMode.SMS_FALLBACK) {
             // ── SMS carrier path ─────────────────────────────────────
-            // No mesh, no Wi-Fi, no F2P — but messages still need to
-            // go out. Lazy-init the SmsTransport so the receiver is
-            // wired for inbound envelopes, and make sure permissions
-            // are checked before the first send.
             peerBarCard.setVisibility(View.GONE);
             bufferingProgress.setVisibility(View.GONE);
             com.antor.sosblue.bridge.SmsTransport sms = bridge.getSmsTransport();
@@ -1223,24 +1169,6 @@ public class ChatActivity extends AppCompatActivity {
         if (!allMessages.isEmpty()) {
             chatAdapter.submitList(new ArrayList<>(allMessages));
         }
-    }
-
-    // ---------------------------------------------------------------
-    //  Dialogs
-    // ---------------------------------------------------------------
-
-    private void showAboutDialog() {
-        new android.app.AlertDialog.Builder(this)
-                .setTitle("About SOSBlue")
-                .setMessage("SOSBlue — Secure Offline-Safe Blue Messenger\n\n"
-                        + "Version 1.0\n\n"
-                        + "A peer-to-peer messaging app with 3-tier transport:\n"
-                        + "\u2022 SOSBlue Mesh (BLE/WiFi-Direct P2P)\n"
-                        + "\u2022 F2P Serverless (WanderingFibreEngine)\n"
-                        + "\u2022 SMS Relay (carrier fallback)\n\n"
-                        + "All messages are end-to-end encrypted.")
-                .setPositiveButton("OK", null)
-                .show();
     }
 
     private void onMediaSelected(Uri uri) {

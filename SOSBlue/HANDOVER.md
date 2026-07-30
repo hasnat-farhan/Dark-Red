@@ -4,7 +4,7 @@
 **Last Build:** `assembleDebug` — **BUILD SUCCESSFUL** (verified Jul 30, 2026)
 **Lint:** 183 warnings, **0 errors** (down from 221)
 **Engine Tests:** 17/17 passed (7 Integration + 5 Routing + 5 Security — verified Jul 30, 2026)
-**Latest Session:** Crash Prevention & Android 14 Stability Fix (Jul 30, 2026)
+**Latest Session:** UI/UX Refactoring — Clean Inbox, Streamlined Navigation, Transport in ChatActivity (Jul 30, 2026)
 
 ---
 
@@ -107,7 +107,7 @@ F2P (Free-to-Peer) Serverless is a decentralized, serverless, off-grid peer-to-p
 |------|---------|
 | `ChatActivity.java` | Main chat screen — handles sending/receiving F2P encrypted messages, media transfer, peer bar, E2E badge, recipient phone validation |
 | `ChatAdapter.java` | RecyclerView adapter — incoming/outgoing text & media bubbles, entrance animations |
-| `MainActivity.java` | Dashboard activity — transport mode selector, peer discovery panel, engine lifecycle |
+| `MainActivity.java` | Conversation inbox — clean RecyclerView of recent chats with search, RSS feed icon, overflow menu (News Feed + Settings). No transport controls, no composer, no engine lifecycle — those live in ChatActivity |
 | `MessageModel.java` | Data model for chat messages — supports text + media, sender/recipient phone, content type enum |
 | `PeerDevice.java` | Peer device model — id, name, signal strength, connection status, **IP endpoint fields** (added in session) |
 | `PeerDiscoveryAdapter.java` | RecyclerView adapter for peer list — dark theme layout, CopyOnWriteArrayList |
@@ -152,7 +152,7 @@ F2P (Free-to-Peer) Serverless is a decentralized, serverless, off-grid peer-to-p
 | File | Purpose |
 |------|---------|
 | `activity_chat.xml` | Chat screen layout — messages list, peer bar, input bar, transport selector, attachment button. Bottom nav **removed** in Session 11 |
-| `activity_main.xml` | Dashboard layout — conversation list (inbox), peer discovery panel, transport radio group. Bottom nav **removed** in Session 11 |
+| `activity_main.xml` | **Cleaned (Session 13)** — Pure conversation inbox layout. Only top bar (app icon, title, search, RSS, menu) + conversation RecyclerView + empty state. All composers, transport controls, peer discovery panels removed |
 | `activity_settings.xml` | Settings layout with transport mode, notification toggles, about info |
 | `activity_sign_in.xml` | Sign-in layout — username + phone fields, MaterialButton |
 | `item_message_incoming.xml` | Incoming text bubble (white bg, dark text) |
@@ -166,7 +166,7 @@ F2P (Free-to-Peer) Serverless is a decentralized, serverless, off-grid peer-to-p
 ### Menu Files
 | File | Purpose |
 |------|---------|
-| `menu/top_app_bar_menu.xml` | **NEW (Session 11)** — Overflow menu with Chats, News Feed, Transport Mode submenu, Settings, About. Replaces deleted `bottom_nav_menu.xml` |
+| `menu/top_app_bar_menu.xml` | **Simplified (Session 13)** — Overflow menu with only News Feed and Settings. Chats, Transport Mode submenu, and About removed — transport controls moved to ChatActivity's inline radio group |
 
 ### `inbox/`
 | File | Purpose |
@@ -287,7 +287,18 @@ No code changes — re-ran engine tests (17/17 passed) and `assembleDebug` (BUIL
 
 ## 5. Files Modified
 
-### Session 12 (Current — Crash Prevention & Android 14 Stability Fix)
+### Session 13 (Current — UI/UX Refactoring: Clean Inbox & Streamlined Navigation)
+
+| File | What Changed |
+|------|-------------|
+| `activity_main.xml` | **COMPLETELY REWRITTEN** — Stripped down to a pure conversation inbox. Removed ALL: message composers (`inputMessage`, `inputImageURL`, `inputVideoURL`), send buttons (`sendButton`, `sendButtonContainer`), transport radio group (`transportScroll`, `transportRadioGroup`, `rb_sosblue_mesh`, `rb_f2p_serverless`, `rb_sms_fallback`), reply preview (`replyPreviewContainer`, `textReplyTitle`, `textReplyMessage`, `closeReplyButton`), peer discovery panel (`peerDiscoveryPanel`, `peerRecyclerView`, `peerEmptyHint`, `peerCountLabel`, `peerRefreshButton`), loading containers (`loadingContainer`, `sendProgressBar`), and unused icons (`downIcon`, `unseenMsg`, `switchInputImage`, `chunkCount`). Now only: simplified top bar (app icon + title + inline search overlay + RSS icon + overflow menu) + conversation RecyclerView + empty state text. |
+| `MainActivity.java` | **COMPLETELY REWRITTEN** — From 400+ lines of dashboard/transport/engine/peer-discovery code to ~200 lines of pure inbox. Removed: `F2PBridge` init, engine startup (`startEngineAsync`), peer discovery listener, `PeerDiscoveryAdapter`, `discoveredPeers`/`peerPhoneNumbers` maps, `transportRadioGroup`/`radioIdToTransportMode()`/`onTransportModeChanged()`, `showPeerPanel()`/`refreshPeerList()`, `showLoading()`, `showAboutDialog()`, `peerPanel`/`peerRecyclerView`/`peerCountLabel`/`peerEmptyHint` fields, `RadioGroup` import, `EngineConfig` import, `Snackbar` import, `ToastUtils` import, `ConcurrentHashMap` import. Kept: identity gate, `POST_NOTIFICATIONS` permission request, `ConversationAdapter`/`ConversationRegistry`, search filter via `TextWatcher`, simplified overflow menu (only `menu_news_feed` and `menu_settings`), `onResume()` refresh. |
+| `menu/top_app_bar_menu.xml` | **REWRITTEN** — Simplified from 6 items (Chats, News Feed, Transport Mode submenu with 3 radio options, Settings, About) to just 2 items: News Feed and Settings. Transport mode selection now happens exclusively via the inline `RadioGroup` inside `ChatActivity`. |
+| `item_conversation.xml` | **POLISHED** — Avatar circle increased to 46dp with 20sp bold white initial. Name font increased to 16sp bold, timestamp to 11sp, last message to 13sp. Card padding increased to 14dp, corner radius to 14dp. Unread badge now uses `backgroundTint="@color/primary_red"` for consistent red pill. Removed unnecessary nested `LinearLayout` layers. `MaterialCardView` stroke color `#2A2A2E` kept for subtle dark theme dividers. |
+| `ChatActivity.java` | **Overflow menu simplified** — Removed all handlers for removed menu items: `menu_chats`, `menu_transport_mesh`, `menu_transport_f2p`, `menu_transport_sms`, `menu_about`. Now only handles `menu_news_feed` and `menu_settings`. **Removed dead code** — `showAboutDialog()` private method was unreferenced after menu simplification. |
+| `NewsFeedActivity.java` | **Overflow menu simplified** — Removed transport mode marking code (`popup.getMenu().findItem(R.id.menu_transport_*).setChecked()`) and all removed menu item handlers. Now only handles `menu_news_feed` and `menu_settings`. **Removed dead code** — `showAboutDialog()` private method. |
+
+### Session 12 (Crash Prevention & Android 14 Stability Fix)
 
 | File | What Changed |
 |------|-------------|
@@ -580,6 +591,28 @@ When a P2P peer is selected:
 ---
 
 ## 7. Key Features Implemented
+
+### ✅ Clean Conversation Inbox — Home Screen UX Refactored (Session 13)
+- **`MainActivity` completely stripped down** to a pure conversation inbox. Removed ALL: message composers, send buttons, transport radio group (SOSBlue Mesh / F2P Serverless / SMS), peer discovery panel, reply preview, and loading indicators.
+- The home screen now shows just: a simplified top bar (app icon + title + search + RSS feed icon + overflow menu), a `RecyclerView` of recent conversations with avatars, and an empty state when no chats exist.
+- Search icon toggles an inline search bar that filters conversations in real-time by display name or message text.
+- Tapping a conversation card navigates to `ChatActivity` with the recipient's phone and name pre-filled.
+
+### ✅ Transport Controls Unified Inside ChatActivity (Session 13)
+- **All transport controls live exclusively in `ChatActivity`**: the radio button group (SOSBlue Mesh | F2P Serverless | SMS), E2E encryption badge, recipient phone input, message composer, attach button, and send button are all at the bottom of the conversation screen.
+- Transport mode persists across sessions via `TransportMode.save()/load()` from SharedPreferences.
+- The engine lifecycle (F2PBridge start/stop, SMS transport init) is fully managed by ChatActivity — MainActivity has zero bridge initialization code.
+
+### ✅ Streamlined Overflow Menu (Session 13)
+- **`top_app_bar_menu.xml`** simplified from 6 items to just 2: "News Feed" and "Settings".
+- Removed: "Chats" (redundant — the home screen IS the Chats view), Transport Mode submenu (now handled by inline RadioGroup in ChatActivity), and "About" (moved to Settings screen).
+- The RSS/feed icon in the top bar remains as a quick-access button to NewsFeedActivity.
+
+### ✅ Conversation Card Polish (Session 13)
+- Larger avatar circles (46dp) with bold white initial letters on a red background.
+- Improved typography: display name 16sp bold, timestamp 11sp muted, last message preview 13sp.
+- Unread badge styled as a red pill with `primary_red` background tint.
+- Subtle `#2A2A2E` card stroke acts as a visual divider between conversations without extra spacing.
 
 ### ✅ Launcher Activity Fix — App No Longer Opens Wrong Screen (Session 12)
 - **Moved MAIN/LAUNCHER intent filter** from `ChatActivity` (1-on-1 chat) to `MainActivity` (conversation inbox). Previously, tapping the app icon opened a raw 1-on-1 chat screen with no context — now it opens the proper inbox with the conversation list.

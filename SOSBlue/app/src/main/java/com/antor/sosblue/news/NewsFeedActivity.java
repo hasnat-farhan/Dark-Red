@@ -266,77 +266,19 @@ public class NewsFeedActivity extends AppCompatActivity {
         android.widget.PopupMenu popup = new android.widget.PopupMenu(this, anchor);
         popup.getMenuInflater().inflate(R.menu.top_app_bar_menu, popup.getMenu());
 
-        // Mark the current transport mode as checked
-        TransportMode currentMode = TransportMode.load(this);
-        switch (currentMode) {
-            case F2P_SERVERLESS:
-                popup.getMenu().findItem(R.id.menu_transport_f2p).setChecked(true);
-                break;
-            case SMS_FALLBACK:
-                popup.getMenu().findItem(R.id.menu_transport_sms).setChecked(true);
-                break;
-            default:
-                popup.getMenu().findItem(R.id.menu_transport_mesh).setChecked(true);
-                break;
-        }
-
         popup.setOnMenuItemClickListener(item -> {
             int id = item.getItemId();
-            if (id == R.id.menu_chats) {
-                startActivity(new Intent(this,
-                        com.antor.sosblue.MainActivity.class));
-                finish();
-                return true;
-            } else if (id == R.id.menu_news_feed) {
+            if (id == R.id.menu_news_feed) {
                 // Already in News Feed
-                return true;
-            } else if (id == R.id.menu_transport_mesh) {
-                TransportMode.SOSBLUE_MESH.save(this);
-                transportRadioGroup.check(R.id.news_rb_sosblue_mesh);
-                ToastUtils.showShort(this,
-                        "Switched to " + TransportMode.SOSBLUE_MESH.getLabel());
-                return true;
-            } else if (id == R.id.menu_transport_f2p) {
-                TransportMode.F2P_SERVERLESS.save(this);
-                transportRadioGroup.check(R.id.news_rb_f2p_serverless);
-                ToastUtils.showShort(this,
-                        "Switched to " + TransportMode.F2P_SERVERLESS.getLabel());
-                return true;
-            } else if (id == R.id.menu_transport_sms) {
-                if (!TransportMode.SMS_FALLBACK.isAvailable(this)) {
-                    ToastUtils.showShort(this, R.string.transport_sms_unavailable);
-                    return true;
-                }
-                TransportMode.SMS_FALLBACK.save(this);
-                transportRadioGroup.check(R.id.news_rb_sms_fallback);
-                ToastUtils.showShort(this,
-                        "Switched to " + TransportMode.SMS_FALLBACK.getLabel());
                 return true;
             } else if (id == R.id.menu_settings) {
                 startActivity(new Intent(this,
                         com.antor.sosblue.settings.SettingsActivity.class));
                 return true;
-            } else if (id == R.id.menu_about) {
-                showAboutDialog();
-                return true;
             }
             return false;
         });
         popup.show();
-    }
-
-    private void showAboutDialog() {
-        new android.app.AlertDialog.Builder(this)
-                .setTitle("About SOSBlue")
-                .setMessage("SOSBlue — Secure Offline-Safe Blue Messenger\n\n"
-                        + "Version 1.0\n\n"
-                        + "A peer-to-peer messaging app with 3-tier transport:\n"
-                        + "• SOSBlue Mesh (BLE/WiFi-Direct P2P)\n"
-                        + "• F2P Serverless (WanderingFibreEngine)\n"
-                        + "• SMS Relay (carrier fallback)\n\n"
-                        + "All messages are end-to-end encrypted.")
-                .setPositiveButton("OK", null)
-                .show();
     }
 
     // ---------------------------------------------------------------
