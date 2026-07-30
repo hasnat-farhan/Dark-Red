@@ -1,18 +1,22 @@
 package com.antor.sosblue.bridge;
 
+import android.Manifest;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.telephony.SmsManager;
 import android.telephony.SmsMessage;
+import android.telephony.TelephonyManager;
 import android.util.Base64;
 import android.util.Log;
 
 import androidx.annotation.Nullable;
+import androidx.core.content.ContextCompat;
 
 import com.antor.sosblue.identity.F2PMessage;
 import com.antor.sosblue.identity.UserIdentity;
@@ -184,6 +188,34 @@ public class SmsTransport {
             String reason = "Unknown error";
             boolean ok = false;
             try {
+                // ── Runtime permission check: SEND_SMS ────────────────
+                // Crash guard: if the user revoked the permission after
+                // the mode switch, fail early instead of letting
+                // SmsManager throw an unhandled SecurityException.
+                if (ContextCompat.checkSelfPermission(appContext,
+                        Manifest.permission.SEND_SMS)
+                        != PackageManager.PERMISSION_GRANTED) {
+                    reason = "SEND_SMS permission was revoked";
+                    Log.e(TAG, reason);
+                    notifySendFailed(listener, reason);
+                    return;
+                }
+
+                // ── SIM state verification ───────────────────────────-
+                // Confirm the SIM is actually ready before attempting
+                // SMS operations.  This catches the "SIM not inserted"
+                // case early instead of letting SmsManager surface an
+                // opaque radio-level error.
+                TelephonyManager tm = (TelephonyManager)
+                        appContext.getSystemService(Context.TELEPHONY_SERVICE);
+                if (tm == null || tm.getSimState() != TelephonyManager.SIM_STATE_READY) {
+                    reason = "SIM not ready — cannot send SMS";
+                    Log.w(TAG, reason + " (state="
+                            + (tm != null ? tm.getSimState() : "no-telephony") + ")");
+                    notifySendFailed(listener, reason);
+                    return;
+                }
+
                 String myPhone = UserIdentity.getPhoneNumber(appContext);
                 if (myPhone == null) {
                     reason = "Sender phone number is not configured";

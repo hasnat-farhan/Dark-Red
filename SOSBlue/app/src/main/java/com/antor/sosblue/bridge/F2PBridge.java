@@ -122,8 +122,12 @@ public class F2PBridge {
             return t;
         });
         this.dedupCleanup.scheduleAtFixedRate(() -> {
-            long cutoff = System.currentTimeMillis() - 60_000;
-            seenMessageIds.values().removeIf(t -> t < cutoff);
+            try {
+                long cutoff = System.currentTimeMillis() - 60_000;
+                seenMessageIds.values().removeIf(t -> t < cutoff);
+            } catch (Throwable t) {
+                Log.e(TAG, "Dedup cleanup task threw", t);
+            }
         }, 30_000, 30_000, TimeUnit.MILLISECONDS);
 
         // ── Initialise network connectivity monitor ───────────────────

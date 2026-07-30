@@ -139,12 +139,14 @@ public enum TransportMode {
             boolean hasFeature = pm.hasSystemFeature(
                     android.content.pm.PackageManager.FEATURE_TELEPHONY);
             if (!hasFeature) return false;
+
             TelephonyManager tm = (TelephonyManager)
                     context.getSystemService(Context.TELEPHONY_SERVICE);
             if (tm == null) return false;
-// Primary: SIM state. Doesn't require READ_PHONE_STATE on
-            // most OEMs (Samsung, Pixel, OnePlus) and is accurate on
-            // tablets with a cellular radio too.
+
+            // ── Primary: SIM state ──────────────────────────────────────
+            // Doesn't require READ_PHONE_STATE on most OEMs (Samsung, Pixel,
+            // OnePlus) and is accurate on tablets with a cellular radio too.
             int simState;
             try { simState = tm.getSimState(); }
             catch (Throwable ignored) { simState = TelephonyManager.SIM_STATE_UNKNOWN; }
@@ -158,7 +160,7 @@ public enum TransportMode {
                     // SIM_STATE_ABSENT / UNKNOWN / NOT_READY / CARD_IO_ERROR
             }
 
-            // Fallback: READ_PHONE_STATE granted means the OS already
+            // ── Fallback: READ_PHONE_STATE granted means the OS already ──
             // accepted this app as phone-aware — trust the user-granted
             // permission and let SmsManager surface real errors.
             try {
@@ -169,10 +171,24 @@ public enum TransportMode {
                 }
             } catch (Throwable ignored) { }
 
-            // Last-ditch: if SmsManager.getDefault() is non-null the
-            // device has the SMS subsystem available.
+            // ── Last-ditch: SmsManager presence check ───────────────────
+            // Some non-telephony devices (certain tablets) still have a
+            // SmsManager that throws on actual use, so this is a soft check
+            // only — the real send path guards with explicit permission +
+            // SIM-state checks.
             try {
-                if (android.telephony.SmsManager.getDefault() != null) {
+                if (android.telephony.SmsManager.getDefault() != null
+                        && android.os.Build.VERSION.SDK_INT < 23) {
+                    return true;
+                }
+            } catch (Throwable ignored) { }
+
+            // ── Final verification: SEND_SMS already granted means the ───
+            // user intends to use SMS, so we trust them.
+            try {
+                if (androidx.core.content.ContextCompat.checkSelfPermission(
+                        context, android.Manifest.permission.SEND_SMS)
+                        == android.content.pm.PackageManager.PERMISSION_GRANTED) {
                     return true;
                 }
             } catch (Throwable ignored) { }

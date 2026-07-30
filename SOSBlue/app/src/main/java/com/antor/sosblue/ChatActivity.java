@@ -72,6 +72,22 @@ public class ChatActivity extends AppCompatActivity {
     private TransportMode currentTransportMode = null;
 
     /**
+     * Non-cancelable progress dialog shown during transport mode transitions.
+     * Dismissed automatically when the switch completes or after 1.5s timeout.
+     */
+    private AlertDialog modeSwitchDialog;
+
+    /** Timeout handler for the mode-switch dialog safety net. */
+    private final Handler modeSwitchTimeoutHandler = new Handler(Looper.getMainLooper());
+
+    /** Runnable that dismisses the mode-switch dialog if it times out. */
+    private Runnable modeSwitchTimeoutRunnable;
+
+    /** The indeterminate spinner inside the mode-switch dialog, kept for replacement on success. */
+    @Nullable
+    private ProgressBar modeSwitchSpinner;
+
+    /**
      * Locally-created {@link com.antor.sosblue.bridge.SmsTransport} — only
      * non-null when ChatActivity booted the carrier ahead of any SMS send
      * (so the receive pipe is wired before the user picks "SMS Relay").
@@ -891,6 +907,9 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
             historyStore.shutdown();
             historyStore = null;
         }
+        // Dismiss the mode-switch dialog if it's still showing
+        // (catches edge cases like activity destruction mid-transition).
+        dismissModeSwitchDialog(false);
         super.onDestroy();
     }
 
@@ -988,10 +1007,22 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
         currentTransportMode = mode;
 
         try {
-            // ── Show loading/buffering overlay for ALL transitions ──
-            if (bufferingProgress != null) {
-                bufferingProgress.setVisibility(View.VISIBLE);
-            }
+            // ── Show non-cancelable buffering dialog for ALL transitions ──
+            showModeSwitchDialog();
+            // ── Safety timeout: auto-dismiss after 1.5 seconds ──
+            modeSwitchTimeoutRunnable = () -> {
+                if (isModeSwitching) {
+                    Log.w("ChatActivity", "Mode switch timed out after 1.5s for " + mode);
+                    dismissModeSwitchDialog(false);
+                    View __root = findViewById(R.id.root);
+                    if (__root != null) {
+                        Snackbar.make(__root,
+                                "Mode switch timed out for " + mode.getLabel(),
+                                Snackbar.LENGTH_SHORT).show();
+                    }
+                }
+            };
+            modeSwitchTimeoutHandler.postDelayed(modeSwitchTimeoutRunnable, 1500);
 
             // ── Stop F2P engine if we are LEAVING F2P mode ──
             // This prevents the engine from running in the background
@@ -1021,10 +1052,7 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
                 }
                 refreshPeerBar();
 
-                // Remove progress indication
-                if (bufferingProgress != null) {
-                    bufferingProgress.setVisibility(View.GONE);
-                }
+                dismissModeSwitchDialog(true);
 
             } else if (mode == TransportMode.SMS_FALLBACK) {
                 // ── SMS carrier path ─────────────────────────────────────
@@ -1053,9 +1081,7 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
                     pendingSmsTransport = sms;
                 }
 
-                if (bufferingProgress != null) {
-                    bufferingProgress.setVisibility(View.GONE);
-                }
+                dismissModeSwitchDialog(true);
                 ToastUtils.showShort(this, "SMS Relay ready");
 
             } else if (mode == TransportMode.F2P_SERVERLESS) {
@@ -1066,9 +1092,7 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
                 f2pRequested = true;
 
                 if (!engineReady) {
-                    if (bufferingProgress != null) {
-                        bufferingProgress.setVisibility(View.VISIBLE);
-                    }
+                    // Dialog is already showing from the top of onTransportModeChanged
 
                     // ── F2P: Use phone number as node ID ──
                     String myPhone = UserIdentity.getPhoneNumber(ChatActivity.this);
@@ -1084,18 +1108,14 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
                             @Override
                             public void onEngineStarted() {
                                 engineReady = true;
-                                if (bufferingProgress != null) {
-                                    bufferingProgress.setVisibility(View.GONE);
-                                }
+                                dismissModeSwitchDialog(true);
                                 refreshPeerBar();
                                 ToastUtils.showShort(ChatActivity.this, "F2P Serverless ready");
                             }
 
                             @Override
                             public void onEngineError(int statusCode, String message) {
-                                if (bufferingProgress != null) {
-                                    bufferingProgress.setVisibility(View.GONE);
-                                }
+                                dismissModeSwitchDialog(false);
                                 View __root = findViewById(R.id.root);
                                 if (__root != null) {
                                     Snackbar.make(__root,
@@ -1106,23 +1126,17 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
                         });
                     } else {
                         // Bridge is null — shouldn't happen, but be safe
-                        if (bufferingProgress != null) {
-                            bufferingProgress.setVisibility(View.GONE);
-                        }
+                        dismissModeSwitchDialog(false);
                         Log.e("ChatActivity", "Cannot start F2P engine: bridge is null");
                     }
                 } else {
                     // Engine already running
-                    if (bufferingProgress != null) {
-                        bufferingProgress.setVisibility(View.GONE);
-                    }
+                    dismissModeSwitchDialog(true);
                 }
             }
         } catch (Exception e) {
             Log.e("ChatActivity", "Error during mode switch to " + mode, e);
-            if (bufferingProgress != null) {
-                bufferingProgress.setVisibility(View.GONE);
-            }
+            dismissModeSwitchDialog(false);
             View __root = findViewById(R.id.root);
             if (__root != null) {
                 Snackbar.make(__root,
@@ -1132,8 +1146,129 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
             // Revert to previous mode tracking on error
             currentTransportMode = previousMode;
         } finally {
-            isModeSwitching = false;
+            // NOTE: isModeSwitching is NOT reset here because the F2P
+            // async engine path needs it to stay true until the engine
+            // actually starts (or times out after 1.5s). It is reset
+            // inside dismissModeSwitchDialog() which is called on every
+            // success / error / timeout path.
         }
+    }
+
+    // ---------------------------------------------------------------
+    //  Mode-switch buffering dialog
+    // ---------------------------------------------------------------
+
+    /**
+     * Shows a non-cancelable progress dialog with "Switching Communication Mode…"
+     * and a spinning indicator.  Replaces the old simple ProgressBar so the user
+     * gets clear visual feedback during mode transitions.
+     */
+    private void showModeSwitchDialog() {
+        if (isActivityDestroyed) return;
+        dismissModeSwitchDialog(false); // avoid duplicates
+        try {
+            AlertDialog.Builder builder = new AlertDialog.Builder(this);
+            builder.setTitle("Switching Communication Mode…");
+            builder.setMessage("Please wait while the transport switches.");
+            builder.setCancelable(false);
+            // Add an indeterminate ProgressBar inside the dialog
+            ProgressBar spinner = new ProgressBar(this);
+            spinner.setLayoutParams(new android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT));
+            spinner.setIndeterminate(true);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                spinner.setIndeterminateTintList(
+                        android.content.res.ColorStateList.valueOf(
+                                getColor(R.color.primary_red)));
+            }
+            builder.setView(spinner);
+            modeSwitchSpinner = spinner;
+            modeSwitchDialog = builder.show();
+        } catch (Exception e) {
+            Log.w("ChatActivity", "Failed to show mode-switch dialog", e);
+            // Fallback: show the old-style buffering spinner
+            if (bufferingProgress != null) {
+                bufferingProgress.setVisibility(View.VISIBLE);
+            }
+        }
+    }
+
+    /**
+     * Dismisses the mode-switch progress dialog with optional success feedback.
+     * <p>
+     * When {@code success} is {@code true}, the dialog title changes to
+     * "✓ Connected", the message shows the transport label, the spinner
+     * is replaced with a green checkmark, and the dialog auto-dismisses
+     * after 600ms — giving the user clear visual feedback that the
+     * transition completed successfully.
+     * When {@code false}, the dialog is dismissed immediately.
+     * Safe to call multiple times.
+     */
+    private void dismissModeSwitchDialog(boolean success) {
+        // Cancel the timeout runnable so it doesn't fire after a successful switch
+        if (modeSwitchTimeoutRunnable != null) {
+            modeSwitchTimeoutHandler.removeCallbacks(modeSwitchTimeoutRunnable);
+            modeSwitchTimeoutRunnable = null;
+        }
+
+        if (success && modeSwitchDialog != null && modeSwitchDialog.isShowing()) {
+            // ── Success feedback: show checkmark briefly, then auto-dismiss ──
+            try {
+                // Update the dialog content to show success
+                String modeLabel = currentTransportMode != null
+                        ? currentTransportMode.getLabel()
+                        : "Transport";
+                modeSwitchDialog.setTitle("\u2713 Connected");
+                modeSwitchDialog.setMessage(modeLabel + " ready");
+
+                // Replace the indeterminate spinner with a green checkmark
+                android.widget.TextView checkmark = new android.widget.TextView(this);
+                checkmark.setText("\u2713");
+                checkmark.setTextSize(48);
+                checkmark.setGravity(android.view.Gravity.CENTER);
+                checkmark.setTextColor(0xFF4CAF50);
+                checkmark.setPadding(0, 16, 0, 8);
+
+                if (modeSwitchSpinner != null) {
+                    android.view.ViewGroup parent = (android.view.ViewGroup)
+                            modeSwitchSpinner.getParent();
+                    if (parent != null) {
+                        int idx = parent.indexOfChild(modeSwitchSpinner);
+                        parent.removeView(modeSwitchSpinner);
+                        parent.addView(checkmark, idx);
+                    }
+                    modeSwitchSpinner = null;
+                }
+
+                // Cancel any previous timeout, then post a new 600ms auto-dismiss
+                // (calls ourselves with success=false to actually dismiss)
+                modeSwitchTimeoutHandler.postDelayed(() ->
+                        dismissModeSwitchDialog(false), 600);
+                return; // Don't dismiss yet — the delayed callback will
+            } catch (Exception e) {
+                Log.w("ChatActivity", "Error showing success state on mode-switch dialog", e);
+                // Fall through to immediate dismiss
+            }
+        }
+
+        // ── Normal/immediate dismiss (failure, timeout, or after success delay) ──
+        if (modeSwitchDialog != null && modeSwitchDialog.isShowing()) {
+            try {
+                modeSwitchDialog.dismiss();
+            } catch (Exception e) {
+                Log.w("ChatActivity", "Error dismissing mode-switch dialog", e);
+            }
+            modeSwitchDialog = null;
+        }
+        // Hide the fallback ProgressBar in case it was shown
+        if (bufferingProgress != null) {
+            bufferingProgress.setVisibility(View.GONE);
+        }
+        // Reset the mode-switching flag so the guard at the top of
+        // onTransportModeChanged() and the timeout runnable both know
+        // the transition is complete.
+        isModeSwitching = false;
     }
 
     // ---------------------------------------------------------------
