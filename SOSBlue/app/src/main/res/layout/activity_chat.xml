@@ -197,6 +197,48 @@
             android:layout_gravity="center"
             android:indeterminateTint="@color/primary_red"
             android:visibility="gone" />
+
+        <!-- Download progress indicator — shown when saving media to gallery -->
+        <LinearLayout
+            android:id="@+id/downloadProgressContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="#E61A1A1A"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="10dp"
+            android:visibility="gone">
+
+            <ProgressBar
+                android:id="@+id/downloadProgressBar"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="0dp"
+                android:layout_height="4dp"
+                android:layout_weight="1"
+                android:max="100"
+                android:progressTint="@color/primary_red"
+                android:progressBackgroundTint="#40FFFFFF" />
+
+            <TextView
+                android:id="@+id/downloadProgressText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:textColor="@color/white"
+                android:textSize="13sp"
+                android:text="0%" />
+
+            <ImageView
+                android:id="@+id/downloadProgressIcon"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:layout_marginStart="8dp"
+                android:src="@drawable/ic_download"
+                android:scaleType="centerInside"
+                android:contentDescription="Downloading" />
+        </LinearLayout>
     </FrameLayout>
 
     <!-- ============================================================

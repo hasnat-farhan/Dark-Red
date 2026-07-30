@@ -145,6 +145,11 @@ public class ChatActivity extends AppCompatActivity {
     /** Search input field reference for filtering. */
     private EditText searchInput;
 
+    // Download progress views
+    private View downloadProgressContainer;
+    private ProgressBar downloadProgressBar;
+    private TextView downloadProgressText;
+
     // ---------------------------------------------------------------
     //  Lifecycle
     // ---------------------------------------------------------------
@@ -565,6 +570,11 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
         inputRecipientPhone = findViewById(R.id.inputRecipientPhone);
         encryptionBadge = findViewById(R.id.encryptionBadge);
         searchInput = findViewById(R.id.searchInput);
+
+        // ── Download progress views ───────────────────────────────
+        downloadProgressContainer = findViewById(R.id.downloadProgressContainer);
+        downloadProgressBar = findViewById(R.id.downloadProgressBar);
+        downloadProgressText = findViewById(R.id.downloadProgressText);
 
         // ── Recipient phone → E2E badge visibility ───────────────
         // Show the red "E2E" badge whenever the user has typed a valid
@@ -1684,10 +1694,21 @@ markMessageStatus(outbound, MessageModel.STATUS_FAILED);
         // Run I/O on background thread to keep UI responsive
         new Thread(() -> {
             try {
+                // ── Show the download progress bar ─────────────────────
+                runOnUiThread(() -> {
+                    if (isActivityDestroyed) return;
+                    showDownloadProgress(0, "0%");
+                });
+
                 Uri cacheUri = Uri.parse(uriStr);
                 String path = cacheUri.getPath();
                 if (path == null) {
                     runOnUiThread(() -> { if (isActivityDestroyed) return;
+                        showDownloadProgress(0, "Failed");
+                        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                            if (isActivityDestroyed) return;
+                            hideDownloadProgress();
+                        }, 1200);
                         ToastUtils.showShort(activity, "Media file path not found"); });
                     return;
                 }
@@ -1699,14 +1720,24 @@ markMessageStatus(outbound, MessageModel.STATUS_FAILED);
                 File mediaFile = new File(path);
                 if (!mediaFile.exists()) {
                     runOnUiThread(() -> { if (isActivityDestroyed) return;
+                        showDownloadProgress(0, "Failed");
+                        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                            if (isActivityDestroyed) return;
+                            hideDownloadProgress();
+                        }, 1200);
                         ToastUtils.showShort(activity, "Media file no longer available"); });
                     return;
                 }
 
-                // Read file bytes
+                // Read file bytes with progress reporting
                 long fileLen = mediaFile.length();
                 if (fileLen > Integer.MAX_VALUE) {
                     runOnUiThread(() -> { if (isActivityDestroyed) return;
+                        showDownloadProgress(0, "Failed");
+                        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                            if (isActivityDestroyed) return;
+                            hideDownloadProgress();
+                        }, 1200);
                         ToastUtils.showShort(activity, "File too large to save"); });
                     return;
                 }
@@ -1715,27 +1746,75 @@ markMessageStatus(outbound, MessageModel.STATUS_FAILED);
                     fileBytes = new byte[(int) fileLen];
                     int offset = 0;
                     int bytesRead;
+                    final int totalLen = fileBytes.length;
+                    int lastReportedPct = -5; // ensures first update fires
                     while (offset < fileBytes.length
                             && (bytesRead = fis.read(fileBytes, offset, fileBytes.length - offset)) != -1) {
                         offset += bytesRead;
+                        // Throttle progress to at most 5% increments to avoid UI thread spam
+                        final int pct = (int) ((long) offset * 70 / totalLen);
+                        if (pct >= lastReportedPct + 5) {
+                            lastReportedPct = pct;
+                            final int reportedPct = pct;
+                            runOnUiThread(() -> {
+                                if (isActivityDestroyed) return;
+                                showDownloadProgress(reportedPct, reportedPct + "%");
+                            });
+                        }
                     }
                 }
 
                 if (fileBytes.length == 0) {
                     runOnUiThread(() -> { if (isActivityDestroyed) return;
+                        hideDownloadProgress();
                         ToastUtils.showShort(activity, "Failed to read media file"); });
                     return;
                 }
 
-                // Save based on API level
+                // Save — show 90% before write
+                runOnUiThread(() -> {
+                    if (isActivityDestroyed) return;
+                    showDownloadProgress(90, "Writing…");
+                });
+
+                // Save based on API level (child methods show their own Toasts)
+                boolean saved;
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    saveViaMediaStore(activity, fileBytes, fileName, mimeType, isVideo);
+                    saved = saveViaMediaStore(activity, fileBytes, fileName, mimeType, isVideo);
                 } else {
-                    saveViaDirectFile(activity, fileBytes, fileName, isVideo);
+                    saved = saveViaDirectFile(activity, fileBytes, fileName, isVideo);
+                }
+
+                if (saved) {
+                    // Success — show 100% briefly then hide progress
+                    runOnUiThread(() -> {
+                        if (isActivityDestroyed) return;
+                        showDownloadProgress(100, "100%");
+                        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                            if (isActivityDestroyed) return;
+                            hideDownloadProgress();
+                        }, 400);
+                    });
+                } else {
+                    // Failure — child method already showed error Toast
+                    runOnUiThread(() -> {
+                        if (isActivityDestroyed) return;
+                        showDownloadProgress(0, "Failed");
+                        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                            if (isActivityDestroyed) return;
+                            hideDownloadProgress();
+                        }, 1200);
+                    });
                 }
             } catch (Exception e) {
                 Log.e("ChatActivity", "Failed to save media to gallery", e);
                 runOnUiThread(() -> { if (isActivityDestroyed) return;
+                    // Keep progress visible briefly so user sees the problem
+                    showDownloadProgress(0, "Failed");
+                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                        if (isActivityDestroyed) return;
+                        hideDownloadProgress();
+                    }, 1200);
                     ToastUtils.showShort(activity,
                             activity.getString(R.string.download_media_failed) + ": " + e.getMessage()); });
             }
@@ -1747,7 +1826,7 @@ markMessageStatus(outbound, MessageModel.STATUS_FAILED);
      * This does NOT require any storage permission. Runs on the calling thread
      * — caller should invoke from a background thread for large files.
      */
-    private void saveViaMediaStore(android.content.Context context,
+    private boolean saveViaMediaStore(android.content.Context context,
                                     byte[] fileBytes, String fileName,
                                     String mimeType, boolean isVideo) {
         try {
@@ -1779,7 +1858,7 @@ markMessageStatus(outbound, MessageModel.STATUS_FAILED);
             if (uri == null) {
                 runOnUiThread(() ->
                         ToastUtils.showShort(context, "Failed to create media entry in gallery"));
-                return;
+                return false;
             }
 
             // Write the file bytes
@@ -1787,7 +1866,7 @@ markMessageStatus(outbound, MessageModel.STATUS_FAILED);
                 if (os == null) {
                     runOnUiThread(() ->
                             ToastUtils.showShort(context, "Failed to open output stream"));
-                    return;
+                    return false;
                 }
                 os.write(fileBytes);
                 os.flush();
@@ -1800,15 +1879,22 @@ markMessageStatus(outbound, MessageModel.STATUS_FAILED);
                 context.getContentResolver().update(uri, values, null, null);
             }
 
-            runOnUiThread(() ->
-                    ToastUtils.showShort(context, context.getString(R.string.download_media_saved)));
+            runOnUiThread(() -> {
+                if (isActivityDestroyed) return;
+                ToastUtils.showShort(context,
+                        context.getString(R.string.download_media_saved));
+            });
             Log.i("ChatActivity", "Media saved to gallery: " + fileName);
+            return true;
 
         } catch (Exception e) {
             Log.e("ChatActivity", "Failed to save via MediaStore", e);
-            runOnUiThread(() ->
-                    ToastUtils.showShort(context,
-                            context.getString(R.string.download_media_failed) + ": " + e.getMessage()));
+            runOnUiThread(() -> {
+                if (isActivityDestroyed) return;
+                ToastUtils.showShort(context,
+                        context.getString(R.string.download_media_failed) + ": " + e.getMessage());
+            });
+            return false;
         }
     }
 
@@ -1817,7 +1903,7 @@ markMessageStatus(outbound, MessageModel.STATUS_FAILED);
      * Requires WRITE_EXTERNAL_STORAGE permission. Runs on the calling
      * thread — caller should invoke from a background thread.
      */
-    private void saveViaDirectFile(android.content.Context context,
+    private boolean saveViaDirectFile(android.content.Context context,
                                     byte[] fileBytes, String fileName,
                                     boolean isVideo) {
         try {
@@ -1843,15 +1929,66 @@ markMessageStatus(outbound, MessageModel.STATUS_FAILED);
                 context.sendBroadcast(scanIntent);
             } catch (Exception ignored) {}
 
-            runOnUiThread(() -> { if (isActivityDestroyed) return;
-                    ToastUtils.showShort(context, context.getString(R.string.download_media_saved)); });
+            runOnUiThread(() -> {
+                if (isActivityDestroyed) return;
+                ToastUtils.showShort(context,
+                        context.getString(R.string.download_media_saved));
+            });
             Log.i("ChatActivity", "Media saved to: " + outFile.getAbsolutePath());
+            return true;
 
         } catch (Exception e) {
             Log.e("ChatActivity", "Failed to save directly to storage", e);
-            runOnUiThread(() -> { if (isActivityDestroyed) return;
-                    ToastUtils.showShort(context,
-                            context.getString(R.string.download_media_failed) + ": " + e.getMessage()); });
+            runOnUiThread(() -> {
+                if (isActivityDestroyed) return;
+                ToastUtils.showShort(context,
+                        context.getString(R.string.download_media_failed) + ": " + e.getMessage());
+            });
+            return false;
+        }
+    }
+
+    // ---------------------------------------------------------------
+    //  Download Progress UI
+    // ---------------------------------------------------------------
+
+    /**
+     * Shows or updates the download progress bar at the bottom of the chat area.
+     * Called from the background download thread via runOnUiThread.
+     *
+     * @param percent  0-100 progress percentage
+     * @param status   short status label (e.g. "Saving...", "42%")
+     */
+    private void showDownloadProgress(int percent, String status) {
+        if (downloadProgressContainer == null) return;
+        if (downloadProgressContainer.getVisibility() != View.VISIBLE) {
+            downloadProgressContainer.setVisibility(View.VISIBLE);
+            downloadProgressContainer.setAlpha(0f);
+            downloadProgressContainer.animate().alpha(1f).setDuration(200).start();
+        }
+        if (downloadProgressBar != null) {
+            downloadProgressBar.setProgress(percent);
+        }
+        if (downloadProgressText != null) {
+            downloadProgressText.setText(status);
+        }
+    }
+
+    /**
+     * Hides the download progress bar with a fade-out animation.
+     */
+    private void hideDownloadProgress() {
+        if (downloadProgressContainer == null) return;
+        if (downloadProgressContainer.getVisibility() == View.VISIBLE) {
+            downloadProgressContainer.animate()
+                    .alpha(0f)
+                    .setDuration(200)
+                    .withEndAction(() -> {
+                        if (downloadProgressContainer != null) {
+                            downloadProgressContainer.setVisibility(View.GONE);
+                        }
+                    })
+                    .start();
         }
     }
 
