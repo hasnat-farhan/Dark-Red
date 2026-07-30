@@ -165,12 +165,21 @@ public class WifiDirectManager {
         filter.addAction(WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION);
         filter.addAction(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION);
         filter.addAction(WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            appContext.registerReceiver(p2pReceiver, filter, Context.RECEIVER_EXPORTED);
-        } else {
-            appContext.registerReceiver(p2pReceiver, filter);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                appContext.registerReceiver(p2pReceiver, filter, Context.RECEIVER_EXPORTED);
+            } else {
+                appContext.registerReceiver(p2pReceiver, filter);
+            }
+            receiverRegistered = true;
+        } catch (SecurityException e) {
+            Log.w(TAG, "Cannot register P2P receiver (missing permission): "
+                    + e.getMessage());
+            p2pReceiver = null;
+        } catch (Exception e) {
+            Log.w(TAG, "Cannot register P2P receiver", e);
+            p2pReceiver = null;
         }
-        receiverRegistered = true;
 
         Log.i(TAG, "Wi-Fi Direct initialized and receiver registered");
     }

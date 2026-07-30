@@ -4,7 +4,7 @@
 **Last Build:** `assembleDebug` — **BUILD SUCCESSFUL** (verified Jul 30, 2026)
 **Lint:** 0 errors (verified Jul 30, 2026)
 **Engine Tests:** 17/17 passed (7 Integration + 5 Routing + 5 Security — verified Jul 30, 2026)
-**Latest Session:** Crypto Self-Test & SMS State Reset Utilities (Jul 30, 2026)
+**Latest Session:** Samsung A35 F2P Crash Fix — Missing try-catch in registerReceiver (Jul 30, 2026)
 
 ---
 
@@ -223,6 +223,11 @@ F2P (Free-to-Peer) Serverless is a decentralized, serverless, off-grid peer-to-p
 
 ## 4. New Files Created
 
+### Session 29 (Samsung A35 F2P Crash Fix — Missing try-catch in registerReceiver)
+| File | Purpose |
+|------|---------|
+| *No new files* | All changes in existing files (see ##5) |
+
 ### Session 23 (Mode-Switch Stability Fixes — F2PBridge Executor Shutdown Bug & ChatActivity Timeout)
 | File | Purpose |
 |------|---------|
@@ -311,6 +316,14 @@ No code changes — re-ran engine tests (17/17 passed) and `assembleDebug` (BUIL
 ---
 
 ## 5. Files Modified
+
+### Session 29 (Samsung A35 F2P Crash Fix — Missing try-catch in registerReceiver)
+
+| File | What Changed |
+|------|-------------|
+| `F2PBridge.java` | **Wrapped `connectivityManager.register()` and `wifiDirectManager.initialize()` in try-catch** — On Samsung A35 (Android 14), both methods call `appContext.registerReceiver()` for system broadcasts (`NETWORK_STATE_CHANGED_ACTION`, `WIFI_P2P_*_ACTION`), which throws `SecurityException` unless the caller holds `NEARBY_WIFI_DEVICES` or `ACCESS_FINE_LOCATION` runtime permission. The uncaught exception propagated out of `startEngine()` through the executor thread in `startEngineAsync()`, crashing the app to the home screen with an empty inbox. Also fixed corrupted `escapeJson()` backslash escaping (quadruple backslashes → correct single-escape Java string literals). |
+| `NetworkConnectivityManager.java` | **Wrapped 2 unprotected `registerReceiver` calls in try-catch** — Wi-Fi state receiver and network state receiver registrations in `register()` now catch `SecurityException` + generic `Exception`. On failure, the receiver field is set to `null` so subsequent calls retry. |
+| `WifiDirectManager.java` | **Wrapped `registerReceiver` in try-catch** — P2P broadcast receiver registration in `initialize()` now catches `SecurityException`. `receiverRegistered` flag is only set to `true` on success, so `shutdown()` never tries to unregister a null receiver. |
 
 ### Session 23 (Mode-Switch Stability Fixes — F2PBridge Executor Shutdown Bug & ChatActivity Timeout + Safety Net)
 

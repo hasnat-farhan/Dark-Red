@@ -62,6 +62,14 @@ public class F2PBridge {
     /** Dedicated scheduler for periodic dedup-cache eviction. */
     private final ScheduledExecutorService dedupCleanup;
 
+    /**
+     * Guards against concurrent {@link #startEngineAsync(EngineConfig, OnEngineStartListener)}
+     * calls. When {@code true}, a rapid second call returns early without queuing
+     * another engine-init task. Reset to {@code false} when the queued task
+     * actually begins executing.
+     */
+    private final AtomicBoolean engineStarting = new AtomicBoolean(false);
+
     /** Application context — avoids hidden API ActivityThread.currentApplication(). */
     private final Context appContext;
 
@@ -225,7 +233,14 @@ public class F2PBridge {
         // so that messages continue flowing after a network switch.
         connectivityManager.addListener(
                 (newLocalIp, prevSsid, currentSsid) -> handleNetworkChange(newLocalIp));
-        connectivityManager.register();
+        try {
+            connectivityManager.register();
+        } catch (SecurityException e) {
+            Log.w(TAG, "Cannot register connectivity manager (missing permission): "
+                    + e.getMessage());
+        } catch (Exception e) {
+            Log.w(TAG, "Cannot register connectivity manager", e);
+        }
 
         // ── Initialise Wi-Fi Direct fallback ──────────────────────────
         // When devices are on different subnets where LAN broadcasts
@@ -237,7 +252,14 @@ public class F2PBridge {
                 // across different Wi-Fi subnets.
             }
         });
-        wifiDirectManager.initialize();
+        try {
+            wifiDirectManager.initialize();
+        } catch (SecurityException e) {
+            Log.w(TAG, "Cannot initialise Wi-Fi Direct (missing permission): "
+                    + e.getMessage());
+        } catch (Exception e) {
+            Log.w(TAG, "Cannot initialise Wi-Fi Direct", e);
+        }
 
         // ── Register a post-rebind listener to re-sync peer endpoints ─
         // After the UDP socket is re-created on network change, we need
@@ -453,10 +475,34 @@ public class F2PBridge {
      * Starts the engine on a dedicated background thread so the calling
      * (typically UI) thread is never blocked.
      * <p>The listener callbacks are posted to the Android main looper.</p>
+     *
+     * <p><b>Concurrency guard:</b> If a previous async engine start is still
+     * pending (hasn't begun executing yet), a rapid second call returns
+     * immediately without queuing a duplicate task. This prevents multiple
+     * concurrent engine initialisations that could occur during rapid
+     * mode switching (SMS → F2P → SMS → F2P).</p>
      */
     public void startEngineAsync(@androidx.annotation.Nullable EngineConfig config,
                                   @androidx.annotation.Nullable OnEngineStartListener listener) {
+        // ── Concurrency guard: skip if another start is pending ──────
+        // Without this, rapid SMS↔F2P toggling can queue multiple
+        // engine-init tasks that execute sequentially but concurrently
+        // with other mode-switch logic, causing socket conflicts,
+        // duplicate Wi-Fi Direct discovery, and stale engine state.
+        if (!engineStarting.compareAndSet(false, true)) {
+            Log.w(TAG, "startEngineAsync: engine is already starting — ignoring duplicate call");
+            if (listener != null) {
+                new android.os.Handler(android.os.Looper.getMainLooper())
+                        .post(() -> listener.onEngineError(-1,
+                                "Engine is already starting"));
+            }
+            return;
+        }
+
         executor.execute(() -> {
+            // Reset the guard so future calls can start the engine again
+            // after this one completes (whether success or failure).
+            engineStarting.set(false);
             startEngine(config);
             android.os.Handler mainHandler = new android.os.Handler(
                     android.os.Looper.getMainLooper());
@@ -1434,7 +1480,7 @@ public class F2PBridge {
 
     /**
      * Returns the {@link NetworkConnectivityManager} that monitors Wi-Fi
-     * network changes. Callers can register additional listeners.
+     * network changes. Callers can add additional listeners.
      */
     public NetworkConnectivityManager getConnectivityManager() {
         return connectivityManager;
@@ -1442,7 +1488,7 @@ public class F2PBridge {
 
     /**
      * Returns the {@link WifiDirectManager} for Wi-Fi Direct fallback
-     * discovery. Callers can register additional listeners.
+     * discovery. Callers can add additional listeners.
      */
     public WifiDirectManager getWifiDirectManager() {
         return wifiDirectManager;

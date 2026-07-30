@@ -167,10 +167,19 @@ public class NetworkConnectivityManager {
             }
         };
         IntentFilter wifiFilter = new IntentFilter(WifiManager.NETWORK_STATE_CHANGED_ACTION);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            appContext.registerReceiver(wifiStateReceiver, wifiFilter, Context.RECEIVER_EXPORTED);
-        } else {
-            appContext.registerReceiver(wifiStateReceiver, wifiFilter);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                appContext.registerReceiver(wifiStateReceiver, wifiFilter, Context.RECEIVER_EXPORTED);
+            } else {
+                appContext.registerReceiver(wifiStateReceiver, wifiFilter);
+            }
+        } catch (SecurityException e) {
+            Log.w(TAG, "Cannot register Wi-Fi state receiver (missing permission): "
+                    + e.getMessage());
+            wifiStateReceiver = null;
+        } catch (Exception e) {
+            Log.w(TAG, "Cannot register Wi-Fi state receiver", e);
+            wifiStateReceiver = null;
         }
 
         // ── Also listen for CONNECTIVITY_ACTION (API < 24) ────────────
@@ -190,10 +199,19 @@ public class NetworkConnectivityManager {
             // CONNECTIVITY_ACTION is deprecated on N+, but still works on older
             // The Tiramisu check below is always false here because N > TIRAMISU is false,
             // but we keep it for symmetry and future minSdk bumps.
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                appContext.registerReceiver(networkStateReceiver, connFilter, Context.RECEIVER_EXPORTED);
-            } else {
-                appContext.registerReceiver(networkStateReceiver, connFilter);
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    appContext.registerReceiver(networkStateReceiver, connFilter, Context.RECEIVER_EXPORTED);
+                } else {
+                    appContext.registerReceiver(networkStateReceiver, connFilter);
+                }
+            } catch (SecurityException e) {
+                Log.w(TAG, "Cannot register network state receiver (missing permission): "
+                        + e.getMessage());
+                networkStateReceiver = null;
+            } catch (Exception e) {
+                Log.w(TAG, "Cannot register network state receiver", e);
+                networkStateReceiver = null;
             }
         }
 
