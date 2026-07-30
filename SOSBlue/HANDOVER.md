@@ -4,7 +4,7 @@
 **Last Build:** `assembleDebug` — **BUILD SUCCESSFUL** (verified Jul 30, 2026)
 **Lint:** 183 warnings, **0 errors** (down from 221)
 **Engine Tests:** 17/17 passed (7 Integration + 5 Routing + 5 Security — verified Jul 30, 2026)
-**Latest Session:** New Chat FAB + Home Screen Polish (Jul 30, 2026)
+**Latest Session:** Crash Audit & Snackbar NPE Protection (Jul 30, 2026)
 
 ---
 
@@ -287,7 +287,16 @@ No code changes — re-ran engine tests (17/17 passed) and `assembleDebug` (BUIL
 
 ## 5. Files Modified
 
-### Session 14 (Current — New Chat FAB + Home Screen Polish)
+### Session 15 (Current — Crash Audit & Snackbar NPE Protection)
+
+| File | What Changed |
+|------|-------------|
+| `ChatActivity.java` | **Global crash shield in `onCreate()`** — extracted all initialisation into `initializedOnCreate()` wrapped in a try-catch. Any startup exception is now logged and surfaced to the user via Toast instead of silently crashing to home screen. **6 Snackbar NPE paths guarded** — all `Snackbar.make(findViewById(R.id.root), ...)` calls in async callbacks (Wi-Fi permission callback, SMS permission callback, `showSmsError()`, F2P engine error, send failure, media send failure) now check `isActivityDestroyed` and null-check `findViewById(R.id.root)` before showing. This prevents crashes when permission dialogs or bridge callbacks fire after the activity is destroyed. |
+| `activity_main.xml` | **Replaced FAB with ExtendedFloatingActionButton** — now shows "Start New Chat" text + compose icon instead of icon-only. Uses `app:icon="@drawable/text"` and `android:text="@string/start_new_chat"` with white text on red background. |
+| `MainActivity.java` | **Added try-catch wrapper** around FAB click handler to safely handle any `startActivity()` failures. |
+| `strings.xml` | **Added `start_new_chat`** string resource. |
+
+### Session 14 (New Chat FAB + Home Screen Polish)
 
 | File | What Changed |
 |------|-------------|
@@ -600,6 +609,12 @@ When a P2P peer is selected:
 ---
 
 ## 7. Key Features Implemented
+
+### ✅ Crash Audit & Snackbar NPE Protection (Session 15)
+- **ChatActivity crash shield** — Entire `onCreate` body extracted into `initializedOnCreate()` wrapped in a try-catch. Any startup exception is logged, shown to the user as a Toast, and the activity finishes gracefully instead of silently crashing to home screen.
+- **6 async Snackbar NPE paths guarded** — All `Snackbar.make(findViewById(R.id.root), ...)` calls in async callbacks (Wi-Fi permission result, SMS permission result, `showSmsError()`, F2P engine error, send failure, media send failure) now check `isActivityDestroyed` and null-check the root view before showing. Prevents crashes when permission dialogs or bridge callbacks fire after the activity is destroyed.
+- **ExtendedFloatingActionButton** — FAB now shows "Start New Chat" text + compose icon, making its purpose immediately clear to users.
+- **FAB click safety** — try-catch wrapper around `startActivity()` in click handler.
 
 ### ✅ New Chat FAB — Start Conversations from Home (Session 14)
 - **FloatingActionButton** (56dp red circle with compose icon) pinned to bottom-right of the inbox screen.

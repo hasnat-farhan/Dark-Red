@@ -67,4 +67,7 @@ All messages are end-to-end encrypted.</string>
     <string name="settings_reset_toast">Settings reset to defaults</string>
     <string name="settings_switched_toast">Switched to %s</string>
     <string name="settings_back">Back</string>
+
+    <!-- Main Screen -->
+    <string name="start_new_chat">Start New Chat</string>
 </resources>

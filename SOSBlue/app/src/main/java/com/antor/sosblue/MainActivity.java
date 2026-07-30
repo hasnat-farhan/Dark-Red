@@ -166,7 +166,11 @@ public class MainActivity extends AppCompatActivity {
 
         // ── New Chat FAB → Open ChatActivity (empty, for fresh conversation)
         findViewById(R.id.newChatFab).setOnClickListener(v -> {
-            startActivity(new Intent(MainActivity.this, ChatActivity.class));
+            try {
+                startActivity(new Intent(MainActivity.this, ChatActivity.class));
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to launch ChatActivity from New Chat FAB", e);
+            }
         });
 
         // RSS/feed icon → Open NewsFeedActivity

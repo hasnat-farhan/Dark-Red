@@ -121,6 +121,25 @@ public class ChatActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        try {
+            initializedOnCreate();
+        } catch (Exception e) {
+            Log.e("ChatActivity", "FATAL: ChatActivity.onCreate crashed", e);
+            android.widget.Toast.makeText(this,
+                    "Chat crashed: " + e.getMessage(),
+                    android.widget.Toast.LENGTH_LONG).show();
+            finish();
+        }
+    }
+
+    /**
+     * Extracted main initialisation body so that a single try-catch in
+     * {@link #onCreate(Bundle)} can shield the entire startup sequence
+     * and surface crashes to the user instead of silently exiting to
+     * the home screen.
+     */
+    private void initializedOnCreate() {
+
         // ── F2P Identity Gate ──────────────────────────────────────
         // Redirect to sign-in if user identity is not yet registered
         if (!UserIdentity.isRegistered(this)) {
@@ -148,9 +167,12 @@ public class ChatActivity extends AppCompatActivity {
                     }
                     if (!allGranted) {
                         Log.w("ChatActivity", "Wi-Fi permissions denied: " + denied);
-                        Snackbar.make(findViewById(R.id.root),
-                                "Wi-Fi permissions needed for peer discovery & mesh",
-                                Snackbar.LENGTH_LONG).show();
+                        View __root = findViewById(R.id.root);
+                        if (__root != null) {
+                            Snackbar.make(__root,
+                                    "Wi-Fi permissions needed for peer discovery & mesh",
+                                    Snackbar.LENGTH_LONG).show();
+                        }
                     } else {
                         Log.i("ChatActivity", "All Wi-Fi/location permissions granted");
                     }
@@ -194,9 +216,12 @@ public class ChatActivity extends AppCompatActivity {
                                 "SMS permissions denied (send=" + sendGranted
                                         + ", receive=" + receiveGranted
                                         + ", phone=" + phoneGranted + ")");
-                        Snackbar.make(findViewById(R.id.root),
-                                getString(R.string.transport_sms_permission_required),
-                                Snackbar.LENGTH_LONG).show();
+                        View __root = findViewById(R.id.root);
+                        if (__root != null) {
+                            Snackbar.make(__root,
+                                    getString(R.string.transport_sms_permission_required),
+                                    Snackbar.LENGTH_LONG).show();
+                        }
                         revertRadioToLastSaved();
                     }
                 });
@@ -805,9 +830,12 @@ public class ChatActivity extends AppCompatActivity {
                     @Override
                     public void onEngineError(int statusCode, String message) {
                         bufferingProgress.setVisibility(View.GONE);
-                        Snackbar.make(findViewById(R.id.root),
-                                "F2P engine error: " + message,
-                                Snackbar.LENGTH_LONG).show();
+                        View __root = findViewById(R.id.root);
+                        if (__root != null) {
+                            Snackbar.make(__root,
+                                    "F2P engine error: " + message,
+                                    Snackbar.LENGTH_LONG).show();
+                        }
                     }
                 });
             }
@@ -916,9 +944,12 @@ public class ChatActivity extends AppCompatActivity {
                     @Override
                     public void onSendFailed(String reason) {
                         showSendProgress(false);
-                        Snackbar.make(findViewById(R.id.root),
-                                "Send failed: " + reason,
-                                Snackbar.LENGTH_LONG).show();
+                        View __root = findViewById(R.id.root);
+                        if (__root != null) {
+                            Snackbar.make(__root,
+                                    "Send failed: " + reason,
+                                    Snackbar.LENGTH_LONG).show();
+                        }
                     }
                 });
     }
@@ -1122,11 +1153,17 @@ public class ChatActivity extends AppCompatActivity {
      * (post-runs to the main thread).
      */
     public void showSmsError(String reason) {
+        if (isActivityDestroyed) return;
         final String msg = (reason == null || reason.isEmpty())
                 ? getString(R.string.sms_send_failed)
                 : getString(R.string.sms_send_failed) + ": " + reason;
-        new android.os.Handler(android.os.Looper.getMainLooper()).post(() ->
-                Snackbar.make(findViewById(R.id.root), msg, Snackbar.LENGTH_LONG).show());
+        new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+            if (isActivityDestroyed) return;
+            View __root = findViewById(R.id.root);
+            if (__root != null) {
+                Snackbar.make(__root, msg, Snackbar.LENGTH_LONG).show();
+            }
+        });
     }
 
     // ---------------------------------------------------------------
@@ -1235,9 +1272,12 @@ public class ChatActivity extends AppCompatActivity {
                     @Override
                     public void onFailed(String transferId, String reason) {
                         showSendProgress(false);
-                        Snackbar.make(findViewById(R.id.root),
-                                "Media send failed: " + reason,
-                                Snackbar.LENGTH_LONG).show();
+                        View __root = findViewById(R.id.root);
+                        if (__root != null) {
+                            Snackbar.make(__root,
+                                    "Media send failed: " + reason,
+                                    Snackbar.LENGTH_LONG).show();
+                        }
                     }
                 });
     }
