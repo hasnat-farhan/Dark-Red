@@ -105,7 +105,7 @@ public class NetworkConnectivityManager {
         if (registered) return;
 
         // ── Primary: ConnectivityManager.NetworkCallback ──────────────
-        if (connectivityManager != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        if (connectivityManager != null) {
             networkCallback = new ConnectivityManager.NetworkCallback() {
                 @Override
                 public void onAvailable(@NonNull Network network) {
@@ -188,6 +188,8 @@ public class NetworkConnectivityManager {
         IntentFilter connFilter = new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION);
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
             // CONNECTIVITY_ACTION is deprecated on N+, but still works on older
+            // The Tiramisu check below is always false here because N > TIRAMISU is false,
+            // but we keep it for symmetry and future minSdk bumps.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 appContext.registerReceiver(networkStateReceiver, connFilter, Context.RECEIVER_EXPORTED);
             } else {
@@ -205,8 +207,7 @@ public class NetworkConnectivityManager {
     public synchronized void unregister() {
         if (!registered) return;
 
-        if (networkCallback != null && connectivityManager != null
-                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        if (networkCallback != null && connectivityManager != null) {
             connectivityManager.unregisterNetworkCallback(networkCallback);
             networkCallback = null;
         }

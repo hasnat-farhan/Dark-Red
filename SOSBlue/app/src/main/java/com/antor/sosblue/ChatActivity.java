@@ -72,6 +72,22 @@ public class ChatActivity extends AppCompatActivity {
     private TransportMode currentTransportMode = null;
 
     /**
+     * Non-cancelable progress dialog shown during transport mode transitions.
+     * Dismissed automatically when the switch completes or after 1.5s timeout.
+     */
+    private AlertDialog modeSwitchDialog;
+
+    /** Timeout handler for the mode-switch dialog safety net. */
+    private final Handler modeSwitchTimeoutHandler = new Handler(Looper.getMainLooper());
+
+    /** Runnable that dismisses the mode-switch dialog if it times out. */
+    private Runnable modeSwitchTimeoutRunnable;
+
+    /** The indeterminate spinner inside the mode-switch dialog, kept for replacement on success. */
+    @Nullable
+    private ProgressBar modeSwitchSpinner;
+
+    /**
      * Locally-created {@link com.antor.sosblue.bridge.SmsTransport} — only
      * non-null when ChatActivity booted the carrier ahead of any SMS send
      * (so the receive pipe is wired before the user picks "SMS Relay").
@@ -144,6 +160,11 @@ public class ChatActivity extends AppCompatActivity {
 
     /** Search input field reference for filtering. */
     private EditText searchInput;
+
+    // Download progress views
+    private View downloadProgressContainer;
+    private ProgressBar downloadProgressBar;
+    private TextView downloadProgressText;
 
     // ---------------------------------------------------------------
     //  Lifecycle
@@ -629,6 +650,11 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
         encryptionBadge = findViewById(R.id.encryptionBadge);
         searchInput = findViewById(R.id.searchInput);
 
+        // ── Download progress views ───────────────────────────────
+        downloadProgressContainer = findViewById(R.id.downloadProgressContainer);
+        downloadProgressBar = findViewById(R.id.downloadProgressBar);
+        downloadProgressText = findViewById(R.id.downloadProgressText);
+
         // ── Recipient phone → E2E badge visibility ───────────────
         // Show the red "E2E" badge whenever the user has typed a valid
         // E.164 recipient phone number, indicating end-to-end encryption
@@ -944,6 +970,9 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
             historyStore.shutdown();
             historyStore = null;
         }
+        // Dismiss the mode-switch dialog if it's still showing
+        // (catches edge cases like activity destruction mid-transition).
+        dismissModeSwitchDialog(false);
         super.onDestroy();
     }
 
@@ -1041,10 +1070,22 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
         currentTransportMode = mode;
 
         try {
-            // ── Show loading/buffering overlay for ALL transitions ──
-            if (bufferingProgress != null) {
-                bufferingProgress.setVisibility(View.VISIBLE);
-            }
+            // ── Show non-cancelable buffering dialog for ALL transitions ──
+            showModeSwitchDialog();
+            // ── Safety timeout: auto-dismiss after 1.5 seconds ──
+            modeSwitchTimeoutRunnable = () -> {
+                if (isModeSwitching) {
+                    Log.w("ChatActivity", "Mode switch timed out after 1.5s for " + mode);
+                    dismissModeSwitchDialog(false);
+                    View __root = findViewById(R.id.root);
+                    if (__root != null) {
+                        Snackbar.make(__root,
+                                "Mode switch timed out for " + mode.getLabel(),
+                                Snackbar.LENGTH_SHORT).show();
+                    }
+                }
+            };
+            modeSwitchTimeoutHandler.postDelayed(modeSwitchTimeoutRunnable, 3000);
 
             // ── Stop F2P engine if we are LEAVING F2P mode ──
             // This prevents the engine from running in the background
@@ -1074,10 +1115,7 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
                 }
                 refreshPeerBar();
 
-                // Remove progress indication
-                if (bufferingProgress != null) {
-                    bufferingProgress.setVisibility(View.GONE);
-                }
+                dismissModeSwitchDialog(true);
 
             } else if (mode == TransportMode.SMS_FALLBACK) {
                 // ── SMS carrier path ─────────────────────────────────────
@@ -1114,9 +1152,7 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
                     pendingSmsTransport = sms;
                 }
 
-                if (bufferingProgress != null) {
-                    bufferingProgress.setVisibility(View.GONE);
-                }
+                dismissModeSwitchDialog(true);
                 ToastUtils.showShort(this, "SMS Relay ready");
 
             } else if (mode == TransportMode.F2P_SERVERLESS) {
@@ -1127,9 +1163,7 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
                 f2pRequested = true;
 
                 if (!engineReady) {
-                    if (bufferingProgress != null) {
-                        bufferingProgress.setVisibility(View.VISIBLE);
-                    }
+                    // Dialog is already showing from the top of onTransportModeChanged
 
                     // ── F2P: Use phone number as node ID ──
                     String myPhone = UserIdentity.getPhoneNumber(ChatActivity.this);
@@ -1145,18 +1179,14 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
                             @Override
                             public void onEngineStarted() {
                                 engineReady = true;
-                                if (bufferingProgress != null) {
-                                    bufferingProgress.setVisibility(View.GONE);
-                                }
+                                dismissModeSwitchDialog(true);
                                 refreshPeerBar();
                                 ToastUtils.showShort(ChatActivity.this, "F2P Serverless ready");
                             }
 
                             @Override
                             public void onEngineError(int statusCode, String message) {
-                                if (bufferingProgress != null) {
-                                    bufferingProgress.setVisibility(View.GONE);
-                                }
+                                dismissModeSwitchDialog(false);
                                 View __root = findViewById(R.id.root);
                                 if (__root != null) {
                                     Snackbar.make(__root,
@@ -1167,23 +1197,17 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
                         });
                     } else {
                         // Bridge is null — shouldn't happen, but be safe
-                        if (bufferingProgress != null) {
-                            bufferingProgress.setVisibility(View.GONE);
-                        }
+                        dismissModeSwitchDialog(false);
                         Log.e("ChatActivity", "Cannot start F2P engine: bridge is null");
                     }
                 } else {
                     // Engine already running
-                    if (bufferingProgress != null) {
-                        bufferingProgress.setVisibility(View.GONE);
-                    }
+                    dismissModeSwitchDialog(true);
                 }
             }
         } catch (Exception e) {
             Log.e("ChatActivity", "Error during mode switch to " + mode, e);
-            if (bufferingProgress != null) {
-                bufferingProgress.setVisibility(View.GONE);
-            }
+            dismissModeSwitchDialog(false);
             View __root = findViewById(R.id.root);
             if (__root != null) {
                 Snackbar.make(__root,
@@ -1193,8 +1217,138 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
             // Revert to previous mode tracking on error
             currentTransportMode = previousMode;
         } finally {
-            isModeSwitching = false;
+            // NOTE: isModeSwitching is NOT reset here because the F2P
+            // async engine path needs it to stay true until the engine
+            // actually starts (or times out after 3s). It is reset
+            // inside dismissModeSwitchDialog() which is called on every
+            // success / error / timeout path.
+            //
+            // Safety net: if a RuntimeException slips through the
+            // catch block and leaves the dialog showing, dismiss it
+            // here to prevent a stuck dialog.
+            if (modeSwitchDialog != null && modeSwitchDialog.isShowing()) {
+                Log.w("ChatActivity",
+                        "Mode switch finally: dismissing stuck dialog for " + mode);
+                dismissModeSwitchDialog(false);
+            }
         }
+    }
+
+    // ---------------------------------------------------------------
+    //  Mode-switch buffering dialog
+    // ---------------------------------------------------------------
+
+    /**
+     * Shows a non-cancelable progress dialog with "Switching Communication Mode…"
+     * and a spinning indicator.  Replaces the old simple ProgressBar so the user
+     * gets clear visual feedback during mode transitions.
+     */
+    private void showModeSwitchDialog() {
+        if (isActivityDestroyed) return;
+        dismissModeSwitchDialog(false); // avoid duplicates
+        try {
+            AlertDialog.Builder builder = new AlertDialog.Builder(this);
+            builder.setTitle("Switching Communication Mode…");
+            builder.setMessage("Please wait while the transport switches.");
+            builder.setCancelable(false);
+            // Add an indeterminate ProgressBar inside the dialog
+            ProgressBar spinner = new ProgressBar(this);
+            spinner.setLayoutParams(new android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT));
+            spinner.setIndeterminate(true);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                spinner.setIndeterminateTintList(
+                        android.content.res.ColorStateList.valueOf(
+                                getColor(R.color.primary_red)));
+            }
+            builder.setView(spinner);
+            modeSwitchSpinner = spinner;
+            modeSwitchDialog = builder.show();
+        } catch (Exception e) {
+            Log.w("ChatActivity", "Failed to show mode-switch dialog", e);
+            // Fallback: show the old-style buffering spinner
+            if (bufferingProgress != null) {
+                bufferingProgress.setVisibility(View.VISIBLE);
+            }
+        }
+    }
+
+    /**
+     * Dismisses the mode-switch progress dialog with optional success feedback.
+     * <p>
+     * When {@code success} is {@code true}, the dialog title changes to
+     * "✓ Connected", the message shows the transport label, the spinner
+     * is replaced with a green checkmark, and the dialog auto-dismisses
+     * after 600ms — giving the user clear visual feedback that the
+     * transition completed successfully.
+     * When {@code false}, the dialog is dismissed immediately.
+     * Safe to call multiple times.
+     */
+    private void dismissModeSwitchDialog(boolean success) {
+        // Cancel the timeout runnable so it doesn't fire after a successful switch
+        if (modeSwitchTimeoutRunnable != null) {
+            modeSwitchTimeoutHandler.removeCallbacks(modeSwitchTimeoutRunnable);
+            modeSwitchTimeoutRunnable = null;
+        }
+
+        if (success && modeSwitchDialog != null && modeSwitchDialog.isShowing()) {
+            // ── Success feedback: show checkmark briefly, then auto-dismiss ──
+            try {
+                // Update the dialog content to show success
+                String modeLabel = currentTransportMode != null
+                        ? currentTransportMode.getLabel()
+                        : "Transport";
+                modeSwitchDialog.setTitle("\u2713 Connected");
+                modeSwitchDialog.setMessage(modeLabel + " ready");
+
+                // Replace the indeterminate spinner with a green checkmark
+                android.widget.TextView checkmark = new android.widget.TextView(this);
+                checkmark.setText("\u2713");
+                checkmark.setTextSize(48);
+                checkmark.setGravity(android.view.Gravity.CENTER);
+                checkmark.setTextColor(0xFF4CAF50);
+                checkmark.setPadding(0, 16, 0, 8);
+
+                if (modeSwitchSpinner != null) {
+                    android.view.ViewGroup parent = (android.view.ViewGroup)
+                            modeSwitchSpinner.getParent();
+                    if (parent != null) {
+                        int idx = parent.indexOfChild(modeSwitchSpinner);
+                        parent.removeView(modeSwitchSpinner);
+                        parent.addView(checkmark, idx);
+                    }
+                    modeSwitchSpinner = null;
+                }
+
+                // Cancel any previous timeout, then post a new 600ms auto-dismiss
+                // (calls ourselves with success=false to actually dismiss)
+                modeSwitchTimeoutHandler.postDelayed(() ->
+                        dismissModeSwitchDialog(false), 600);
+                return; // Don't dismiss yet — the delayed callback will
+            } catch (Exception e) {
+                Log.w("ChatActivity", "Error showing success state on mode-switch dialog", e);
+                // Fall through to immediate dismiss
+            }
+        }
+
+        // ── Normal/immediate dismiss (failure, timeout, or after success delay) ──
+        if (modeSwitchDialog != null && modeSwitchDialog.isShowing()) {
+            try {
+                modeSwitchDialog.dismiss();
+            } catch (Exception e) {
+                Log.w("ChatActivity", "Error dismissing mode-switch dialog", e);
+            }
+            modeSwitchDialog = null;
+        }
+        // Hide the fallback ProgressBar in case it was shown
+        if (bufferingProgress != null) {
+            bufferingProgress.setVisibility(View.GONE);
+        }
+        // Reset the mode-switching flag so the guard at the top of
+        // onTransportModeChanged() and the timeout runnable both know
+        // the transition is complete.
+        isModeSwitching = false;
     }
 
     // ---------------------------------------------------------------
@@ -1758,10 +1912,21 @@ markMessageStatus(outbound, MessageModel.STATUS_FAILED);
         // Run I/O on background thread to keep UI responsive
         new Thread(() -> {
             try {
+                // ── Show the download progress bar ─────────────────────
+                runOnUiThread(() -> {
+                    if (isActivityDestroyed) return;
+                    showDownloadProgress(0, "0%");
+                });
+
                 Uri cacheUri = Uri.parse(uriStr);
                 String path = cacheUri.getPath();
                 if (path == null) {
                     runOnUiThread(() -> { if (isActivityDestroyed) return;
+                        showDownloadProgress(0, "Failed");
+                        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                            if (isActivityDestroyed) return;
+                            hideDownloadProgress();
+                        }, 1200);
                         ToastUtils.showShort(activity, "Media file path not found"); });
                     return;
                 }
@@ -1773,14 +1938,24 @@ markMessageStatus(outbound, MessageModel.STATUS_FAILED);
                 File mediaFile = new File(path);
                 if (!mediaFile.exists()) {
                     runOnUiThread(() -> { if (isActivityDestroyed) return;
+                        showDownloadProgress(0, "Failed");
+                        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                            if (isActivityDestroyed) return;
+                            hideDownloadProgress();
+                        }, 1200);
                         ToastUtils.showShort(activity, "Media file no longer available"); });
                     return;
                 }
 
-                // Read file bytes
+                // Read file bytes with progress reporting
                 long fileLen = mediaFile.length();
                 if (fileLen > Integer.MAX_VALUE) {
                     runOnUiThread(() -> { if (isActivityDestroyed) return;
+                        showDownloadProgress(0, "Failed");
+                        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                            if (isActivityDestroyed) return;
+                            hideDownloadProgress();
+                        }, 1200);
                         ToastUtils.showShort(activity, "File too large to save"); });
                     return;
                 }
@@ -1789,27 +1964,75 @@ markMessageStatus(outbound, MessageModel.STATUS_FAILED);
                     fileBytes = new byte[(int) fileLen];
                     int offset = 0;
                     int bytesRead;
+                    final int totalLen = fileBytes.length;
+                    int lastReportedPct = -5; // ensures first update fires
                     while (offset < fileBytes.length
                             && (bytesRead = fis.read(fileBytes, offset, fileBytes.length - offset)) != -1) {
                         offset += bytesRead;
+                        // Throttle progress to at most 5% increments to avoid UI thread spam
+                        final int pct = (int) ((long) offset * 70 / totalLen);
+                        if (pct >= lastReportedPct + 5) {
+                            lastReportedPct = pct;
+                            final int reportedPct = pct;
+                            runOnUiThread(() -> {
+                                if (isActivityDestroyed) return;
+                                showDownloadProgress(reportedPct, reportedPct + "%");
+                            });
+                        }
                     }
                 }
 
                 if (fileBytes.length == 0) {
                     runOnUiThread(() -> { if (isActivityDestroyed) return;
+                        hideDownloadProgress();
                         ToastUtils.showShort(activity, "Failed to read media file"); });
                     return;
                 }
 
-                // Save based on API level
+                // Save — show 90% before write
+                runOnUiThread(() -> {
+                    if (isActivityDestroyed) return;
+                    showDownloadProgress(90, "Writing…");
+                });
+
+                // Save based on API level (child methods show their own Toasts)
+                boolean saved;
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    saveViaMediaStore(activity, fileBytes, fileName, mimeType, isVideo);
+                    saved = saveViaMediaStore(activity, fileBytes, fileName, mimeType, isVideo);
                 } else {
-                    saveViaDirectFile(activity, fileBytes, fileName, isVideo);
+                    saved = saveViaDirectFile(activity, fileBytes, fileName, isVideo);
+                }
+
+                if (saved) {
+                    // Success — show 100% briefly then hide progress
+                    runOnUiThread(() -> {
+                        if (isActivityDestroyed) return;
+                        showDownloadProgress(100, "100%");
+                        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                            if (isActivityDestroyed) return;
+                            hideDownloadProgress();
+                        }, 400);
+                    });
+                } else {
+                    // Failure — child method already showed error Toast
+                    runOnUiThread(() -> {
+                        if (isActivityDestroyed) return;
+                        showDownloadProgress(0, "Failed");
+                        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                            if (isActivityDestroyed) return;
+                            hideDownloadProgress();
+                        }, 1200);
+                    });
                 }
             } catch (Exception e) {
                 Log.e("ChatActivity", "Failed to save media to gallery", e);
                 runOnUiThread(() -> { if (isActivityDestroyed) return;
+                    // Keep progress visible briefly so user sees the problem
+                    showDownloadProgress(0, "Failed");
+                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                        if (isActivityDestroyed) return;
+                        hideDownloadProgress();
+                    }, 1200);
                     ToastUtils.showShort(activity,
                             activity.getString(R.string.download_media_failed) + ": " + e.getMessage()); });
             }
@@ -1821,7 +2044,7 @@ markMessageStatus(outbound, MessageModel.STATUS_FAILED);
      * This does NOT require any storage permission. Runs on the calling thread
      * — caller should invoke from a background thread for large files.
      */
-    private void saveViaMediaStore(android.content.Context context,
+    private boolean saveViaMediaStore(android.content.Context context,
                                     byte[] fileBytes, String fileName,
                                     String mimeType, boolean isVideo) {
         try {
@@ -1853,7 +2076,7 @@ markMessageStatus(outbound, MessageModel.STATUS_FAILED);
             if (uri == null) {
                 runOnUiThread(() ->
                         ToastUtils.showShort(context, "Failed to create media entry in gallery"));
-                return;
+                return false;
             }
 
             // Write the file bytes
@@ -1861,7 +2084,7 @@ markMessageStatus(outbound, MessageModel.STATUS_FAILED);
                 if (os == null) {
                     runOnUiThread(() ->
                             ToastUtils.showShort(context, "Failed to open output stream"));
-                    return;
+                    return false;
                 }
                 os.write(fileBytes);
                 os.flush();
@@ -1874,15 +2097,22 @@ markMessageStatus(outbound, MessageModel.STATUS_FAILED);
                 context.getContentResolver().update(uri, values, null, null);
             }
 
-            runOnUiThread(() ->
-                    ToastUtils.showShort(context, context.getString(R.string.download_media_saved)));
+            runOnUiThread(() -> {
+                if (isActivityDestroyed) return;
+                ToastUtils.showShort(context,
+                        context.getString(R.string.download_media_saved));
+            });
             Log.i("ChatActivity", "Media saved to gallery: " + fileName);
+            return true;
 
         } catch (Exception e) {
             Log.e("ChatActivity", "Failed to save via MediaStore", e);
-            runOnUiThread(() ->
-                    ToastUtils.showShort(context,
-                            context.getString(R.string.download_media_failed) + ": " + e.getMessage()));
+            runOnUiThread(() -> {
+                if (isActivityDestroyed) return;
+                ToastUtils.showShort(context,
+                        context.getString(R.string.download_media_failed) + ": " + e.getMessage());
+            });
+            return false;
         }
     }
 
@@ -1891,7 +2121,7 @@ markMessageStatus(outbound, MessageModel.STATUS_FAILED);
      * Requires WRITE_EXTERNAL_STORAGE permission. Runs on the calling
      * thread — caller should invoke from a background thread.
      */
-    private void saveViaDirectFile(android.content.Context context,
+    private boolean saveViaDirectFile(android.content.Context context,
                                     byte[] fileBytes, String fileName,
                                     boolean isVideo) {
         try {
@@ -1917,15 +2147,66 @@ markMessageStatus(outbound, MessageModel.STATUS_FAILED);
                 context.sendBroadcast(scanIntent);
             } catch (Exception ignored) {}
 
-            runOnUiThread(() -> { if (isActivityDestroyed) return;
-                    ToastUtils.showShort(context, context.getString(R.string.download_media_saved)); });
+            runOnUiThread(() -> {
+                if (isActivityDestroyed) return;
+                ToastUtils.showShort(context,
+                        context.getString(R.string.download_media_saved));
+            });
             Log.i("ChatActivity", "Media saved to: " + outFile.getAbsolutePath());
+            return true;
 
         } catch (Exception e) {
             Log.e("ChatActivity", "Failed to save directly to storage", e);
-            runOnUiThread(() -> { if (isActivityDestroyed) return;
-                    ToastUtils.showShort(context,
-                            context.getString(R.string.download_media_failed) + ": " + e.getMessage()); });
+            runOnUiThread(() -> {
+                if (isActivityDestroyed) return;
+                ToastUtils.showShort(context,
+                        context.getString(R.string.download_media_failed) + ": " + e.getMessage());
+            });
+            return false;
+        }
+    }
+
+    // ---------------------------------------------------------------
+    //  Download Progress UI
+    // ---------------------------------------------------------------
+
+    /**
+     * Shows or updates the download progress bar at the bottom of the chat area.
+     * Called from the background download thread via runOnUiThread.
+     *
+     * @param percent  0-100 progress percentage
+     * @param status   short status label (e.g. "Saving...", "42%")
+     */
+    private void showDownloadProgress(int percent, String status) {
+        if (downloadProgressContainer == null) return;
+        if (downloadProgressContainer.getVisibility() != View.VISIBLE) {
+            downloadProgressContainer.setVisibility(View.VISIBLE);
+            downloadProgressContainer.setAlpha(0f);
+            downloadProgressContainer.animate().alpha(1f).setDuration(200).start();
+        }
+        if (downloadProgressBar != null) {
+            downloadProgressBar.setProgress(percent);
+        }
+        if (downloadProgressText != null) {
+            downloadProgressText.setText(status);
+        }
+    }
+
+    /**
+     * Hides the download progress bar with a fade-out animation.
+     */
+    private void hideDownloadProgress() {
+        if (downloadProgressContainer == null) return;
+        if (downloadProgressContainer.getVisibility() == View.VISIBLE) {
+            downloadProgressContainer.animate()
+                    .alpha(0f)
+                    .setDuration(200)
+                    .withEndAction(() -> {
+                        if (downloadProgressContainer != null) {
+                            downloadProgressContainer.setVisibility(View.GONE);
+                        }
+                    })
+                    .start();
         }
     }
 

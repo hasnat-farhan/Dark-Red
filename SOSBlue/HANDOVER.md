@@ -4,7 +4,7 @@
 **Last Build:** `assembleDebug` — **BUILD SUCCESSFUL** (verified Jul 30, 2026)
 **Lint:** 183 warnings, **0 errors** (down from 221)
 **Engine Tests:** 17/17 passed (7 Integration + 5 Routing + 5 Security — verified Jul 30, 2026)
-**Latest Session:** Media Download — Save Received Images/Videos to Device Gallery (Jul 30, 2026)
+**Latest Session:** Mode-Switch Stability Fixes — F2PBridge Executor Shutdown Bug & ChatActivity Timeout + Safety Net (Jul 30, 2026)
 
 ---
 
@@ -223,6 +223,16 @@ F2P (Free-to-Peer) Serverless is a decentralized, serverless, off-grid peer-to-p
 
 ## 4. New Files Created
 
+### Session 23 (Mode-Switch Stability Fixes — F2PBridge Executor Shutdown Bug & ChatActivity Timeout)
+| File | Purpose |
+|------|---------|
+| *No new files* | All changes in existing files |
+
+### Session 22 (SMS Permission Checks, F2PBridge Lambda Crash Fix & Mode-Switch Buffering Dialog)
+| File | Purpose |
+|------|---------|
+| *No new files* | All changes in existing files |
+
 ### Session 21 (Media Download — Save Received Media to Gallery)
 | File | Purpose |
 |------|---------|
@@ -292,16 +302,35 @@ No code changes — re-ran engine tests (17/17 passed) and `assembleDebug` (BUIL
 
 ## 5. Files Modified
 
-### Session 21 (Media Download — Save Received Images/Videos to Gallery)
+### Session 23 (Mode-Switch Stability Fixes — F2PBridge Executor Shutdown Bug & ChatActivity Timeout + Safety Net)
 
 | File | What Changed |
 |------|-------------|
-| `ic_download.xml` | **NEW** — Vector drawable: downward arrow into a tray icon for the media download button overlay |
-| `item_message_media_incoming.xml` | **Added download button overlay** — New `@+id/downloadButton` ImageView positioned at top-right of the media preview FrameLayout. Semi-transparent black circle background (`#CC000000`) with white download arrow. Hidden by default (`visibility="gone"`), shown by adapter only on incoming media. |
-| `ChatAdapter.java` | **Added `OnDownloadClickListener` interface** with `onDownloadClick(MessageModel)` callback. Added `setOnDownloadClickListener()` setter. Download button wiring: shown only on incoming media (`!msg.isSent()`) with null-safe click listener. Added `downloadButton` field to ViewHolder. |
-| `ChatActivity.java` | **Added media download feature with 4 new methods:** `showDownloadMediaDialog()` — AlertDialog popup with file name/size/type info, confirms before saving. `saveMediaToGallery()` — storage permission check (pre-Android 10), runs background thread file I/O to prevent ANR. `saveViaMediaStore()` — saves to device gallery via `MediaStore.Images.Media`/`Video.Media` (API 29+, no permissions), uses `IS_PENDING` flag for atomic writes, videos go to `MOVIES/SOSBlue/`, images to `PICTURES/SOSBlue/`. `saveViaDirectFile()` — writes to external storage directory with media scanner broadcast (pre-API 29). `requestStoragePermissionForDownload()` — runtime permission launcher for `WRITE_EXTERNAL_STORAGE`. Added `storagePermissionLauncher` field registered in `initializedOnCreate()`, `pendingDownloadMessage` field for permission callback. Adapter download listener set with `setOnDownloadClickListener(this::showDownloadMediaDialog)`. Added `import android.os.Environment`. |
-| `AndroidManifest.xml` | **Added `WRITE_EXTERNAL_STORAGE`** permission with `android:maxSdkVersion="28"` — only needed for pre-Android 10 direct file writes; Android 10+ uses MediaStore without permissions. |
-| `strings.xml` | **Added 7 download-related strings:** `download_media_title`, `download_media_message` (format string with type/file/size/mime), `download_media_confirm` ("Save to Gallery"), `download_media_cancel`, `download_media_saved`, `download_media_failed`, `download_permission_required`. |
+| `F2PBridge.java` | **Fixed critical executor shutdown bug** — Removed `executor.shutdownNow()` and `dedupCleanup.shutdownNow()` from `stopEngine()`. These `final` executor fields were being shut down permanently, making **every subsequent engine restart** silently fail with `RejectedExecutionException`. After one mode switch away from F2P, the engine could never be restarted. Replaced with detailed comment explaining why daemon-thread executors are safe to leave running: `startEngine()` is `synchronized` + guarded by `AtomicBoolean started`, stale tasks are harmless, and the executors are cleaned up on process exit. |
+| `ChatActivity.java` | **Two stability improvements to mode-switch dialog:**
+  - **Timeout increased** from 1500ms → **3000ms** — the previous 1.5s timeout was too short for F2P engine initialisation; a slow engine start would time out and dismiss the dialog before the engine was ready
+  - **Finally block safety net** — Added a check at the end of the `try-catch-finally` block: if the mode-switch dialog is still showing (meaning a `RuntimeException` slipped through the catch block), it gets dismissed immediately with a log warning. This prevents a permanently stuck dialog that would block all future mode switches (since `isModeSwitching` would remain `true`) |
+
+### Session 22 (SMS Permission Checks, F2PBridge Lambda Crash Fix & Mode-Switch Buffering Dialog)
+
+| File | What Changed |
+|------|-------------|
+| `SmsTransport.java` | **Added runtime permission check & SIM verification before SMS send** — `sendEnvelope()` now checks `ContextCompat.checkSelfPermission(SEND_SMS)` and `TelephonyManager.getSimState() == SIM_STATE_READY` before attempting SMS operations. Fails early with clear error message if permission revoked or SIM absent. All operations wrapped in try-catch for graceful degradation. |
+| `TransportMode.java` | **Enhanced hasTelephony() with SEND_SMS permission fallback** — Added SEND_SMS runtime permission fallback (trusts the user's intent). Scoped `SmsManager.getDefault()` guard to pre-API 23 to avoid false blame. All checks wrapped in try-catch. |
+| `F2PBridge.java` | **Wrapped dedupCleanup scheduled task in try-catch** — `scheduleAtFixedRate` lambda now has try-catch to prevent unhandled exceptions from killing the scheduler thread. |
+| `ChatActivity.java` | **Major mode-switch dialog rewrite:**
+  - **Replaced simple bufferingProgress spinner** with non-cancelable `AlertDialog` (`showModeSwitchDialog()` / `dismissModeSwitchDialog()`)
+  - **`showModeSwitchDialog()`** — Creates dialog with "Switching Communication Mode…" title, "Please wait…" message, indeterminate ProgressBar spinner tinted red (`primary_red`). Stores spinner reference in `modeSwitchSpinner` for later replacement.
+  - **`dismissModeSwitchDialog(boolean success)`** — New signature with success feedback:
+    - `success=true`: Changes title to "✓ Connected", message to "{modeLabel} ready", replaces spinner with green checkmark, auto-dismisses after **600ms**
+    - `success=false`: Immediate dismiss (failure/timeout/cleanup)
+  - **1.5s timeout safety net** — `modeSwitchTimeoutRunnable` posted with `postDelayed`; on timeout dismisses dialog and shows Snackbar
+  - **`modeSwitchTimeoutHandler` / `modeSwitchTimeoutRunnable` fields** — For timeout lifecycle management
+  - **`modeSwitchSpinner` field** — Kept for spinner→checkmark replacement on success
+  - **Bug fix**: Moved `isModeSwitching = false` from `finally` block into `dismissModeSwitchDialog()` — fixes timeout guard for async F2P mode (finally ran before async engine started, making timeout's `if (isModeSwitching)` check useless)
+  - **onDestroy safety net** — Added `dismissModeSwitchDialog(false)` to dismiss dialog if activity destroyed mid-transition
+  - **All 10 call sites updated** — Success paths (Mesh/SMS/F2P started/engine already running) → `dismissModeSwitchDialog(true)`. Error/timeout/cleanup paths → `dismissModeSwitchDialog(false)`
+  - Removed redundant `isModeSwitching = false` from timeout runnable (already handled inside `dismissModeSwitchDialog`) |
 
 ### Session 19-20 (Media Chunk Integrity, Bluetooth/Wi-Fi Permissions & Crash Prevention Buffering)
 

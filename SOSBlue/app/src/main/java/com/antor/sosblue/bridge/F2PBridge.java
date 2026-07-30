@@ -122,8 +122,12 @@ public class F2PBridge {
             return t;
         });
         this.dedupCleanup.scheduleAtFixedRate(() -> {
-            long cutoff = System.currentTimeMillis() - 60_000;
-            seenMessageIds.values().removeIf(t -> t < cutoff);
+            try {
+                long cutoff = System.currentTimeMillis() - 60_000;
+                seenMessageIds.values().removeIf(t -> t < cutoff);
+            } catch (Throwable t) {
+                Log.e(TAG, "Dedup cleanup task threw", t);
+            }
         }, 30_000, 30_000, TimeUnit.MILLISECONDS);
 
         // ── Initialise network connectivity monitor ───────────────────
@@ -316,8 +320,17 @@ public class F2PBridge {
         stopUdpMesh();
         try {
             engine.shutdown();
-            executor.shutdownNow();
-            dedupCleanup.shutdownNow();
+            // NOTE: executor and dedupCleanup are deliberately NOT shut down
+            // here because they are final fields and cannot be recreated.
+            // Calling shutdownNow() would prevent future startEngineAsync()
+            // calls from ever executing — a RejectedExecutionException would
+            // be silently swallowed and the engine would never restart.
+            // These executors use daemon threads, so they are cleaned up
+            // when the process exits. Any stale tasks still in the queue
+            // will execute harmlessly because:
+            //   - startEngine() is synchronized + guarded by started.getAndSet()
+            //   - sendMessageAsync() is a no-op on a stopped engine
+            //   - dedupCleanup.scheduleAtFixedRate just cleans the dedup cache
             Log.i(TAG, "Engine stopped");
         } catch (Exception e) {
             Log.e(TAG, "Error during engine shutdown", e);
