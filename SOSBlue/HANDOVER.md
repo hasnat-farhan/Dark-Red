@@ -4,7 +4,7 @@
 **Last Build:** `assembleDebug` — **BUILD SUCCESSFUL** (verified Jul 30, 2026)
 **Lint:** 183 warnings, **0 errors** (down from 221)
 **Engine Tests:** 17/17 passed (7 Integration + 5 Routing + 5 Security — verified Jul 30, 2026)
-**Latest Session:** Crash Audit & Snackbar NPE Protection (Jul 30, 2026)
+**Latest Session:** Menu Simplification & SMS Broadcast Targeting (Jul 30, 2026)
 
 ---
 
@@ -166,7 +166,7 @@ F2P (Free-to-Peer) Serverless is a decentralized, serverless, off-grid peer-to-p
 ### Menu Files
 | File | Purpose |
 |------|---------|
-| `menu/top_app_bar_menu.xml` | **Simplified (Session 13)** — Overflow menu with only News Feed and Settings. Chats, Transport Mode submenu, and About removed — transport controls moved to ChatActivity's inline radio group |
+| `menu/top_app_bar_menu.xml` | **Further simplified (Session 17)** — Overflow menu with only How SOSBlue Works (menu_about) and Settings (menu_settings). News Feed removed from menu — RSS icon still provides quick access |
 
 ### `inbox/`
 | File | Purpose |
@@ -287,7 +287,26 @@ No code changes — re-ran engine tests (17/17 passed) and `assembleDebug` (BUIL
 
 ## 5. Files Modified
 
-### Session 15 (Current — Crash Audit & Snackbar NPE Protection)
+### Session 17 (Menu Simplification + How SOSBlue Works Dialog)
+
+| File | What Changed |
+|------|-------------|
+| `menu/top_app_bar_menu.xml` | **Replaced News Feed with About** — `menu_news_feed` replaced with `menu_about` ("How SOSBlue Works"). Menu now has 2 items: About and Settings. News Feed is still accessible via RSS icon in top bar. |
+| `strings.xml` | **Rewrote about message** — `dialog_about_message` expanded with comprehensive 5-section "how this app works" explanation covering: identity (phone-based E2E), 3 transport tiers (Mesh, F2P, SMS), peer discovery (UDP heartbeats), news broadcasts, and offline-first philosophy. `menu_about` string updated to "How SOSBlue Works". |
+| `ChatActivity.java` | **About dialog restored** — Changed overflow menu handler from `menu_news_feed` (opening NewsFeedActivity) to `menu_about` (showing about dialog). Added `AlertDialog.Builder`-based `showAboutDialog()` method using the comprehensive `dialog_about_message` string resource. |
+| `MainActivity.java` | **Same overflow menu update** — Changed `menu_news_feed` → `menu_about` handler. Added `showAboutDialog()` with AlertDialog. |
+| `NewsFeedActivity.java` | **Same overflow menu update** — Changed `menu_news_feed` → `menu_about` handler. Added `showAboutDialog()` with AlertDialog. |
+
+### Session 16 (SMS Broadcast to SMS Contacts Only)
+
+| File | What Changed |
+|------|-------------|
+| `ConversationModel.java` | **Added `lastTransportMode` field** — New String field tracking which transport was used for the last message ("SOSBLUE_MESH", "F2P_SERVERLESS", or "SMS_FALLBACK"). Defaults to "SOSBLUE_MESH". Added getter `getLastTransportMode()` and setter `setLastTransportMode()`. |
+| `ConversationRegistry.java` | **Added `transportMode` param to `update()`** — New 8th parameter `@NonNull String transportMode` passed through to `ConversationModel.setLastTransportMode()` on both create and update paths. Javadoc updated. |
+| `ChatActivity.java` | **3 call sites updated to pass transport mode** — (1) Incoming mesh/F2P: passes `isMeshBroadcast ? "SOSBLUE_MESH" : "F2P_SERVERLESS"`. (2) Incoming SMS: passes `"SMS_FALLBACK"`. (3) Outgoing send: passes `mode.name()` (the currently selected transport). Moved `TransportMode mode` definition before registry update to resolve scope. |
+| `NewsFeedActivity.java` | **SMS broadcast now targets SMS contacts** — Instead of sending to selfPhone (demo placeholder), the SMS broadcast case now queries `ConversationRegistry.getAll()`, filters conversations where `lastTransportMode == "SMS_FALLBACK"`, and sends the news to each SMS contact. Tracks sent/failed counts per recipient and shows summary toast (e.g. "News sent to 3 SMS contacts"). Shows helpful message if no SMS contacts exist yet. |
+
+### Session 15 (Crash Audit & Snackbar NPE Protection)
 
 | File | What Changed |
 |------|-------------|
@@ -609,6 +628,16 @@ When a P2P peer is selected:
 ---
 
 ## 7. Key Features Implemented
+
+### ✅ Menu Simplified to Settings + How SOSBlue Works (Session 17)
+- **Replaced "News Feed" menu item** with "How SOSBlue Works" — the overflow menu now shows only Settings and the new About option.
+- **Comprehensive how-it-works dialog** — tapping "How SOSBlue Works" shows a detailed AlertDialog explaining: identity/E2E encryption, all 3 transport tiers (Mesh, F2P Serverless, SMS Relay), peer discovery (UDP heartbeats), news broadcasts, and the offline-first philosophy.
+- **News Feed still accessible** via the RSS/feed icon in the top bar of all activities.
+
+### ✅ SMS Broadcast Targets SMS Contacts Only (Session 16)
+- **Conversation transport tracking** — `ConversationModel` now stores `lastTransportMode` ("SOSBLUE_MESH", "F2P_SERVERLESS", or "SMS_FALLBACK") for each conversation. `ConversationRegistry.update()` accepts and persists the transport mode.
+- **Targeted SMS news broadcast** — News broadcasts sent via SMS are now delivered only to contacts previously chatted with via SMS (filtered by `lastTransportMode == "SMS_FALLBACK"`). Shows a helpful message if no SMS contacts exist yet.
+- **Sent/fail tracking** — For multi-recipient SMS broadcasts, tracks success/failure counts and shows a summary toast.
 
 ### ✅ Crash Audit & Snackbar NPE Protection (Session 15)
 - **ChatActivity crash shield** — Entire `onCreate` body extracted into `initializedOnCreate()` wrapped in a try-catch. Any startup exception is logged, shown to the user as a Toast, and the activity finishes gracefully instead of silently crashing to home screen.

@@ -77,6 +77,7 @@ public final class ConversationRegistry {
      * @param isOutgoing     {@code true} if local user sent the message
      * @param hasMedia       {@code true} if message contains media
      * @param incrementUnread {@code true} to increment unread counter (for incoming messages)
+     * @param transportMode  transport used (e.g. "SOSBLUE_MESH", "F2P_SERVERLESS", "SMS_FALLBACK")
      */
     public static void update(@NonNull String conversationId,
                               @NonNull String displayName,
@@ -84,7 +85,8 @@ public final class ConversationRegistry {
                               long lastTimestamp,
                               boolean isOutgoing,
                               boolean hasMedia,
-                              boolean incrementUnread) {
+                              boolean incrementUnread,
+                              @NonNull String transportMode) {
         String preview = lastMessage.length() > 80
                 ? lastMessage.substring(0, 80) + "…"
                 : lastMessage;
@@ -95,7 +97,8 @@ public final class ConversationRegistry {
                     .setLastMessage(preview)
                     .setLastTimestamp(lastTimestamp)
                     .setHasMedia(hasMedia)
-                    .setOutgoing(isOutgoing);
+                    .setOutgoing(isOutgoing)
+                    .setLastTransportMode(transportMode);
             if (incrementUnread) {
                 existing.incrementUnread();
             } else {
@@ -106,7 +109,8 @@ public final class ConversationRegistry {
                     conversationId, displayName, preview, lastTimestamp);
             model.setHasMedia(hasMedia)
                     .setOutgoing(isOutgoing)
-                    .setUnreadCount(incrementUnread ? 1 : 0);
+                    .setUnreadCount(incrementUnread ? 1 : 0)
+                    .setLastTransportMode(transportMode);
             conversations.put(conversationId, model);
         }
         Log.d(TAG, "Conversation updated: " + displayName + " (" + conversationId + ")");

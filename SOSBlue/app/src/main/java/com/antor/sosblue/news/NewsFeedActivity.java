@@ -1,5 +1,6 @@
 package com.antor.sosblue.news;
 
+import android.app.AlertDialog;
 import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -35,6 +36,8 @@ import com.antor.sosblue.bridge.TransportMode;
 import com.antor.sosblue.identity.F2PMessage;
 import com.antor.sosblue.identity.MessageEncryptor;
 import com.antor.sosblue.identity.UserIdentity;
+import com.antor.sosblue.inbox.ConversationModel;
+import com.antor.sosblue.inbox.ConversationRegistry;
 import com.antor.sosblue.notification.NotificationHelper;
 import com.antor.sosblue.util.ToastUtils;
 import com.google.android.material.snackbar.Snackbar;
@@ -268,8 +271,8 @@ public class NewsFeedActivity extends AppCompatActivity {
 
         popup.setOnMenuItemClickListener(item -> {
             int id = item.getItemId();
-            if (id == R.id.menu_news_feed) {
-                // Already in News Feed
+            if (id == R.id.menu_about) {
+                showAboutDialog();
                 return true;
             } else if (id == R.id.menu_settings) {
                 startActivity(new Intent(this,
@@ -388,23 +391,65 @@ public class NewsFeedActivity extends AppCompatActivity {
                     return;
                 }
                 String smsText = newsPacket.toSmsText();
-                // Send the SMS text to all known peers (broadcast-style)
-                // For SMS, we send to self as a demo — in production, dispatch to peer list
-                String selfPhone = UserIdentity.getPhoneNumber(this);
-                if (selfPhone != null) {
-                    bridge.sendMessageAsync(smsText, selfPhone, TransportMode.SMS_FALLBACK,
+
+                // ── Send news only to contacts previously chatted with via SMS ──
+                // Look up all conversations and filter by SMS transport
+                java.util.List<ConversationModel> allConversations = ConversationRegistry.getAll();
+                final java.util.List<String> smsRecipients = new java.util.ArrayList<>();
+                for (ConversationModel conv : allConversations) {
+                    if ("SMS_FALLBACK".equals(conv.getLastTransportMode())) {
+                        smsRecipients.add(conv.getConversationId());
+                    }
+                }
+
+                if (smsRecipients.isEmpty()) {
+                    ToastUtils.showShort(this, "No SMS contacts yet — start an SMS chat first");
+                    showSendProgress(false);
+                    return;
+                }
+
+                final int totalTargets = smsRecipients.size();
+                final int[] sentCount = {0};
+                final int[] failCount = {0};
+
+                for (String recipientPhone : smsRecipients) {
+                    bridge.sendMessageAsync(smsText, recipientPhone, TransportMode.SMS_FALLBACK,
                             new F2PBridge.OnMessageSendListener() {
                                 @Override
                                 public void onSent() {
-                                    showSendProgress(false);
-                                    ToastUtils.showShort(NewsFeedActivity.this, "News broadcast via SMS");
+                                    synchronized (sentCount) {
+                                        sentCount[0]++;
+                                        int done = sentCount[0] + failCount[0];
+                                        if (done == totalTargets) {
+                                            showSendProgress(false);
+                                            if (failCount[0] == 0) {
+                                                ToastUtils.showShort(NewsFeedActivity.this,
+                                                        "News sent to " + sentCount[0]
+                                                                + " SMS contact" + (sentCount[0] != 1 ? "s" : ""));
+                                            } else {
+                                                Snackbar.make(findViewById(R.id.newsRoot),
+                                                        "Sent to " + sentCount[0] + "/" + totalTargets
+                                                                + " SMS contacts (" + failCount[0]
+                                                                + " failed)",
+                                                        Snackbar.LENGTH_LONG).show();
+                                            }
+                                        }
+                                    }
                                 }
                                 @Override
                                 public void onSendFailed(String reason) {
-                                    showSendProgress(false);
-                                    Snackbar.make(findViewById(R.id.newsRoot),
-                                            "SMS broadcast failed: " + reason,
-                                            Snackbar.LENGTH_LONG).show();
+                                    synchronized (failCount) {
+                                        failCount[0]++;
+                                        int done = sentCount[0] + failCount[0];
+                                        if (done == totalTargets) {
+                                            showSendProgress(false);
+                                            Snackbar.make(findViewById(R.id.newsRoot),
+                                                    "Sent to " + sentCount[0] + "/" + totalTargets
+                                                            + " SMS contacts (" + failCount[0]
+                                                            + " failed)",
+                                                    Snackbar.LENGTH_LONG).show();
+                                        }
+                                    }
                                 }
                             });
                 }
@@ -499,6 +544,18 @@ public class NewsFeedActivity extends AppCompatActivity {
     // ---------------------------------------------------------------
     //  Progress helpers
     // ---------------------------------------------------------------
+
+    // ---------------------------------------------------------------
+    //  About dialog
+    // ---------------------------------------------------------------
+
+    private void showAboutDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.dialog_about_title)
+                .setMessage(R.string.dialog_about_message)
+                .setPositiveButton(R.string.dialog_ok, null)
+                .show();
+    }
 
     private void showSendProgress(boolean show) {
         sendButton.setVisibility(show ? View.INVISIBLE : View.VISIBLE);

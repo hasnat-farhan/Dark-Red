@@ -19,6 +19,7 @@ public class ConversationModel {
     private int unreadCount;               // messages since the user last viewed
     private boolean hasMedia;              // true if last message contains media
     private boolean isOutgoing;            // true if the last message was sent by local user
+    private String lastTransportMode;        // transport used for last message (e.g. "SOSBLUE_MESH", "F2P_SERVERLESS", "SMS_FALLBACK")
 
     public ConversationModel(@NonNull String conversationId,
                              @NonNull String displayName,
@@ -31,6 +32,7 @@ public class ConversationModel {
         this.unreadCount = 0;
         this.hasMedia = false;
         this.isOutgoing = false;
+        this.lastTransportMode = "SOSBLUE_MESH";
     }
 
     // ── Getters ──────────────────────────────────────────────────
@@ -51,6 +53,9 @@ public class ConversationModel {
     public boolean hasMedia()         { return hasMedia; }
 
     public boolean isOutgoing()       { return isOutgoing; }
+
+    @NonNull
+    public String getLastTransportMode() { return lastTransportMode; }
 
     // ── Setters (fluent for convenience) ──────────────────────────
 
@@ -86,6 +91,11 @@ public class ConversationModel {
 
     public ConversationModel setOutgoing(boolean outgoing) {
         isOutgoing = outgoing;
+        return this;
+    }
+
+    public ConversationModel setLastTransportMode(@NonNull String lastTransportMode) {
+        this.lastTransportMode = lastTransportMode;
         return this;
     }
 

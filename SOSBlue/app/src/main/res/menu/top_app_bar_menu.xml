@@ -2,9 +2,9 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
 
     <item
-        android:id="@+id/menu_news_feed"
-        android:icon="@drawable/feed"
-        android:title="@string/menu_switch_news" />
+        android:id="@+id/menu_about"
+        android:icon="@drawable/nearby"
+        android:title="@string/menu_about" />
 
     <item
         android:id="@+id/menu_settings"

@@ -43,6 +43,7 @@ import com.antor.sosblue.identity.MessageEncryptor;
 import com.antor.sosblue.identity.UserIdentity;
 import com.antor.sosblue.identity.JsonPayloadHelper;
 
+import android.app.AlertDialog;
 import android.util.Base64;
 
 import com.google.android.material.snackbar.Snackbar;
@@ -380,7 +381,8 @@ public class ChatActivity extends AppCompatActivity {
                                 System.currentTimeMillis(),
                                 false,  // isOutgoing
                                 false,  // hasMedia
-                                true    // incrementUnread (incoming message)
+                                true,   // incrementUnread (incoming message)
+                                isMeshBroadcast ? "SOSBLUE_MESH" : "F2P_SERVERLESS"
                         );
 
                         // ── Post notification if activity is not in foreground ──
@@ -476,7 +478,8 @@ public class ChatActivity extends AppCompatActivity {
                                 System.currentTimeMillis(),
                                 false,  // isOutgoing
                                 false,  // hasMedia
-                                true    // incrementUnread
+                                true,   // incrementUnread
+                                "SMS_FALLBACK"
                         );
                     });
                 } catch (Exception e) {
@@ -656,9 +659,8 @@ public class ChatActivity extends AppCompatActivity {
             popup.getMenuInflater().inflate(R.menu.top_app_bar_menu, popup.getMenu());
             popup.setOnMenuItemClickListener(item -> {
                 int id = item.getItemId();
-                if (id == R.id.menu_news_feed) {
-                    startActivity(new Intent(ChatActivity.this,
-                            com.antor.sosblue.news.NewsFeedActivity.class));
+                if (id == R.id.menu_about) {
+                    showAboutDialog();
                     return true;
                 } else if (id == R.id.menu_settings) {
                     startActivity(new Intent(ChatActivity.this,
@@ -900,6 +902,10 @@ public class ChatActivity extends AppCompatActivity {
         MessageModel outbound = new MessageModel(messageText, true, myPhone, recipientPhone);
         allMessages.add(outbound);
 
+        // 4. Determine transport mode for dispatch
+        TransportMode mode = radioIdToTransportMode(
+                transportRadioGroup.getCheckedRadioButtonId());
+
         // ── Register in conversation inbox ──────────────────────
         String resolvedRecipientName = com.antor.sosblue.notification.NotificationHelper
                 .lookupDisplayName(recipientPhone);
@@ -910,7 +916,8 @@ public class ChatActivity extends AppCompatActivity {
                 System.currentTimeMillis(),
                 true,   // isOutgoing
                 false,  // hasMedia
-                false   // incrementUnread (reset on outgoing)
+                false,  // incrementUnread (reset on outgoing)
+                mode.name()
         );
         java.util.List<MessageModel> updated = new ArrayList<>(chatAdapter.getCurrentList());
         updated.add(outbound);
@@ -927,13 +934,10 @@ public class ChatActivity extends AppCompatActivity {
         chatAdapter.registerAdapterDataObserver(scrollObserver);
         chatAdapter.submitList(updated);
 
-        // 4. Show inline progress
+        // 5. Show inline progress
         showSendProgress(true);
 
-        // 5. Dispatch async using the entered recipient phone number
-        TransportMode mode = radioIdToTransportMode(
-                transportRadioGroup.getCheckedRadioButtonId());
-
+        // 6. Dispatch async using the entered recipient phone number
         bridge.sendMessageAsync(messageText, recipientPhone, mode,
                 new F2PBridge.OnMessageSendListener() {
                     @Override
@@ -1206,6 +1210,18 @@ public class ChatActivity extends AppCompatActivity {
         if (!allMessages.isEmpty()) {
             chatAdapter.submitList(new ArrayList<>(allMessages));
         }
+    }
+
+    // ---------------------------------------------------------------
+    //  About dialog
+    // ---------------------------------------------------------------
+
+    private void showAboutDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.dialog_about_title)
+                .setMessage(R.string.dialog_about_message)
+                .setPositiveButton(R.string.dialog_ok, null)
+                .show();
     }
 
     private void onMediaSelected(Uri uri) {

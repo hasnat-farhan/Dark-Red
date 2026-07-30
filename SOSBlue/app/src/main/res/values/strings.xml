@@ -33,13 +33,39 @@
     <string name="menu_switch_chat">Switch to Chat Feed</string>
     <string name="menu_switch_news">Switch to News Feed</string>
     <string name="menu_settings">Settings / Mode Switch</string>
-    <string name="menu_about">About / Help</string>
+    <string name="menu_about">How SOSBlue Works</string>
 
     <!-- Dialogs -->
     <string name="dialog_transport_title">Transport Mode</string>
     <string name="dialog_cancel">Cancel</string>
-    <string name="dialog_about_title">About SOSBlue</string>
-    <string name="dialog_about_message">SOSBlue — Secure Offline-Safe Blue Messenger\n\nVersion 1.0\n\nA peer-to-peer messaging app with 3-tier transport:\n\u2022 SOSBlue Mesh (BLE/WiFi-Direct P2P)\n\u2022 F2P Serverless (WanderingFibreEngine)\n\u2022 SMS Relay (carrier fallback)\n\nAll messages are end-to-end encrypted.</string>
+    <string name="dialog_about_title">How SOSBlue Works</string>
+    <string name="dialog_about_message">SOSBlue — Secure Offline-Safe Blue Messenger
+
+Version 1.0
+
+HOW IT WORKS:
+
+1. Your Identity
+Your phone number is your identity. All messages are end-to-end encrypted using AES-256-GCM keys derived from phone numbers.
+
+2. Three Transport Tiers
+
+• SOSBlue Mesh — Discover nearby devices via UDP broadcast on local Wi-Fi. Messages hop through the mesh with TTL-based relay for extended range. No internet needed.
+
+• F2P Serverless — The Wandering Fibre Engine routes encrypted packets through the mesh. Peers discover each other via UDP heartbeats every 3 seconds. Multi-hop routing with automatic deduplication.
+
+• SMS Relay — As a last-resort fallback, messages are sent as encrypted SMS envelopes via carrier SMS. Only works with contacts you have previously chatted with via SMS.
+
+3. Peer Discovery
+Devices broadcast heartbeat beacons over UDP every 3 seconds. Discovered peers appear in the nearby devices list. IP endpoints are tracked for direct unicast.
+
+4. News Broadcasts
+Broadcast news to all connected peers via Mesh or F2P, or to SMS contacts only (via SMS Relay). News items appear in a dedicated feed with transport badges.
+
+5. Offline-First
+No central server, no cloud, no internet required. Works entirely on local networks. Perfect for disaster zones, remote areas, or privacy-conscious users.
+
+All messages are end-to-end encrypted.</string>
     <string name="dialog_ok">OK</string>
 
     <!-- Search -->

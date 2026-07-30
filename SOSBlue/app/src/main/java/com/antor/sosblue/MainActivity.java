@@ -7,6 +7,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.app.AlertDialog;
 import android.util.Log;
 import android.view.View;
 import android.widget.EditText;
@@ -184,8 +185,8 @@ public class MainActivity extends AppCompatActivity {
             popup.getMenuInflater().inflate(R.menu.top_app_bar_menu, popup.getMenu());
             popup.setOnMenuItemClickListener(item -> {
                 int id = item.getItemId();
-                if (id == R.id.menu_news_feed) {
-                    startActivity(new Intent(MainActivity.this, NewsFeedActivity.class));
+                if (id == R.id.menu_about) {
+                    showAboutDialog();
                     return true;
                 } else if (id == R.id.menu_settings) {
                     startActivity(new Intent(MainActivity.this, SettingsActivity.class));
@@ -238,6 +239,18 @@ public class MainActivity extends AppCompatActivity {
     // ---------------------------------------------------------------
     //  Runtime permission helpers
     // ---------------------------------------------------------------
+
+    // ---------------------------------------------------------------
+    //  About dialog
+    // ---------------------------------------------------------------
+
+    private void showAboutDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.dialog_about_title)
+                .setMessage(R.string.dialog_about_message)
+                .setPositiveButton(R.string.dialog_ok, null)
+                .show();
+    }
 
     private void requestNotificationPermissionIfNeeded() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return;
