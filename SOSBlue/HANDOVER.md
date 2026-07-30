@@ -2,9 +2,9 @@
 
 **Branch:** `main`
 **Last Build:** `assembleDebug` — **BUILD SUCCESSFUL** (verified Jul 30, 2026)
-**Lint:** 184 warnings, **0 errors** (down from 221)
+**Lint:** 183 warnings, **0 errors** (down from 221)
 **Engine Tests:** 17/17 passed (7 Integration + 5 Routing + 5 Security — verified Jul 30, 2026)
-**Latest Session:** UI/UX Navigation Redesign & Lint Resolution (Jul 30, 2026)
+**Latest Session:** UI/UX Navigation Redesign, Lint Resolution & Crash Audit (Jul 30, 2026)
 
 ---
 
@@ -287,7 +287,7 @@ No code changes — re-ran engine tests (17/17 passed) and `assembleDebug` (BUIL
 
 ## 5. Files Modified
 
-### Session 11 (Current — UI/UX Navigation Redesign & Lint Resolution)
+### Session 11 (Current — UI/UX Navigation Redesign, Lint Resolution & Crash Audit)
 
 | File | What Changed |
 |------|-------------|
@@ -297,18 +297,20 @@ No code changes — re-ran engine tests (17/17 passed) and `assembleDebug` (BUIL
 | `menu/top_app_bar_menu.xml` | **NEW** — Overflow menu with Chats, News Feed, Transport Mode submenu (SOSBlue Mesh / F2P Serverless / SMS), Settings, About |
 | `menu/bottom_nav_menu.xml` | **DELETED** — Replaced by `top_app_bar_menu.xml` as part of navigation redesign |
 | `AndroidManifest.xml` | Added `windowSoftInputMode="adjustResize"` to `MainActivity`. **Removed** duplicated `ACCESS_WIFI_STATE` and `CHANGE_WIFI_STATE` permission entries (were declared twice — in "Network permissions" block and "Wi-Fi Direct/P2P" block). |
-| `MainActivity.java` | **Overflow menu:** Replaced inline `PopupMenu` with `R.menu.top_app_bar_menu` inflation + transport mode submenu handling with persistence. **Bottom nav:** Removed `BottomNavigationView` listener code. **Lifecycle:** Added `onStop()` + try-catch in `onDestroy()` for safe bridge cleanup. **Added** `import android.util.Log`. |
-| `ChatActivity.java` | **Overflow menu:** Replaced inline `PopupMenu` with `R.menu.top_app_bar_menu` inflation + transport mode submenu. **Bottom nav:** Removed `BottomNavigationView` listener code. **Dead code:** Removed `showTransportSettingsDialog()` (now handled by overflow menu + SettingsActivity). **Lifecycle:** Added `onStop()` + try-catch in `onDestroy()` for bridge + SMS transport cleanup. **Fixed** `DefaultLocale` — added `Locale.ROOT` to 3 `toLowerCase()` calls in search filter. |
-| `NewsFeedActivity.java` | **Overflow menu:** Replaced with `R.menu.top_app_bar_menu` inflation + transport mode submenu. **Bottom nav:** Removed `BottomNavigationView` listener code and import. **Transport selector:** Made `newsTransportScroll` visible; added `OnCheckedChangeListener` to persist mode changes. **Dead code:** Removed `showSettingsDialog()`. **Lifecycle:** Added `onStop()` + try-catch in `onDestroy()`. **Fixed** `DefaultLocale` — added `Locale.ROOT` to 3 `toLowerCase()` calls in search. |
+| `MainActivity.java` | **Overflow menu:** Replaced inline `PopupMenu` with `R.menu.top_app_bar_menu` inflation + transport mode submenu handling with persistence. **Bottom nav:** Removed `BottomNavigationView` listener code. **Lifecycle:** Added `onStop()` + try-catch in `onDestroy()` for safe bridge cleanup. **Crash fix:** Added missing `rb_sms_fallback` case in `radioIdToTransportMode()` (was silently mapping SMS to Mesh). **Crash fix:** Added `isFinishing()`/`isDestroyed()` guard + `bridge != null` check in `onTransportModeChanged()`. **Added** `import android.util.Log`. |
+| `ChatActivity.java` | **Overflow menu:** Replaced inline `PopupMenu` with `R.menu.top_app_bar_menu` inflation + transport mode submenu. **Bottom nav:** Removed `BottomNavigationView` listener code. **Dead code:** Removed `showTransportSettingsDialog()`. **Lifecycle:** Added `onStop()` + try-catch `onDestroy()` for bridge + SMS transport cleanup. **Crash fix:** Added `volatile isActivityDestroyed` flag + guards on all `runOnUiThread()` callbacks to prevent detached-activity crashes. **Crash fix:** Added root view null check before `Snackbar.make()` in error handler. **Crash fix:** Wired `pendingSmsTransport.shutdown()` in `onDestroy()`. **Fixed** `DefaultLocale` — added `Locale.ROOT` to 3 `toLowerCase()` calls. |
+| `NewsFeedActivity.java` | **Overflow menu:** Replaced with `R.menu.top_app_bar_menu` inflation + transport mode submenu. **Bottom nav:** Removed `BottomNavigationView` listener code and import. **Transport selector:** Made `newsTransportScroll` visible; added `OnCheckedChangeListener` to persist mode changes. **Dead code:** Removed `showSettingsDialog()`. **Lifecycle:** Added `onStop()` + try-catch in `onDestroy()`. **Fixed** `DefaultLocale` — added `Locale.ROOT` to 3 `toLowerCase()` calls. |
 | `F2PNewsPacket.java` | **Fixed** `DefaultLocale` — added `Locale.ROOT` to `bridgeName.toUpperCase()` call |
 | `MessageModel.java` | **Fixed** `DefaultLocale` — added `Locale.ROOT` to all 3 `String.format()` calls for media size display |
 | `NetworkConnectivityManager.java` | **Fixed** `DefaultLocale` — added `Locale.ROOT` to 2 `getName().toLowerCase()` calls |
+| `SmsTransport.java` | **Crash fix:** Added `shutdown()` method to properly shut down the background executor (was never shut down — thread leak) |
+| `WifiDirectManager.java` | **Crash fix:** Fixed broken code formatting in `handleConnectionInfo()` — trailing `if` statement was missing `if` keyword after misplaced block comment |
 | `strings.xml` | Added `transport_sosblue_mesh` ("SOSBlue Mesh") and `transport_f2p_serverless` ("F2P Serverless") string resources for menu |
 | `drawable/bg_white_round_bottom.xml` | **DELETED** — Unused |
 | `drawable/bg_white_round_top.xml` | **DELETED** — Unused |
 | `drawable/rounded_edittext.xml` | **DELETED** — Unused |
 | `drawable/ic_bottom_news.xml` | **DELETED** — Unused (was only referenced by deleted `bottom_nav_menu.xml`) |
-| `layout/*.xml` (9 files) | **Fixed** `SmallSp` — bumped font sizes from `10sp`/`11sp` to `12sp` across `activity_main.xml`, `activity_chat.xml`, `item_message_incoming.xml`, `item_message_outgoing.xml`, `item_message_media_incoming.xml`, `item_message_media_outgoing.xml`, `item_conversation.xml`, `item_news_card.xml`, `activity_settings.xml` |
+| `layout/*.xml` (9 files) | **Fixed** `SmallSp` — bumped font sizes from `10sp`/`11sp` to `12sp` |
 
 ### Session 10 (Conversation Inbox & Lint Cleanup)
 
@@ -577,8 +579,17 @@ When a P2P peer is selected:
 - `onStop()` + try-catch `onDestroy()` cleanup added to all 3 activities — bridge engine stop, SMS transport unregister, and notification helper cleanup are all safely wrapped
 - Transport initialization safe from NPEs via try-catch blocks
 
+### ✅ Crash Audit & Stability Fixes (Session 11)
+- **MainActivity SMS mode bug:** Fixed `radioIdToTransportMode()` — added missing `SMS_FALLBACK` case that was silently mapping SMS selection to Mesh, making SMS transport unusable from overflow menu
+- **MainActivity NPE guard:** Added `isFinishing()`/`isDestroyed()` guard + `bridge != null` check + root view null check in `onTransportModeChanged()`
+- **ChatActivity detached-activity crash:** Added `volatile isActivityDestroyed` flag set in `onDestroy()`, with guards on all `runOnUiThread()` callbacks that access UI elements (chatAdapter, Snackbar)
+- **ChatActivity Snackbar NPE:** Added root view null check before `Snackbar.make()` in the packet error handler
+- **SmsTransport executor leak:** Added `shutdown()` method, wired into `ChatActivity.onDestroy()`; executor was previously never shut down, causing thread leak on every Activity recreation
+- **WifiDirectManager broken code:** Fixed missing `if` keyword in `handleConnectionInfo()` — trailing block comment left the if-statement syntactically broken
+- **Lifecycle cleanup:** `onStop()` + try-catch `onDestroy()` with safe bridge stop, SMS transport unregister/shutdown, and notification helper cleanup in all 3 activities
+
 ### ✅ Lint Cleanup (Session 11)
-- **Reduced lint warnings from 221 → 184 (17% reduction), 0 errors**
+- **Reduced lint warnings from 221 → 183 (17% reduction), 0 errors**
 - **Fixed DefaultLocale (11 in app files):** Added `Locale.ROOT` to all `toLowerCase()`/`toUpperCase()`/`String.format()` calls across `ChatActivity`, `F2PNewsPacket`, `MessageModel`, `NetworkConnectivityManager`, `NewsFeedActivity`
 - **Fixed InefficientWeight (2):** Changed `layout_width="wrap_content"` → `"0dp"` for weighted layouts in `activity_main.xml`
 - **Fixed NestedWeights (1):** Eliminated nested weight in `activity_main.xml` by replacing inner layout's weight with `wrap_content` + `layout_gravity="end"`
