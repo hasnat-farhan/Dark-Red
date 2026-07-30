@@ -142,9 +142,16 @@ public class WifiDirectManager {
                     if (networkInfo != null && networkInfo.isConnected()) {
                         Log.i(TAG, "Wi-Fi Direct connection established");
                         // Request connection info to get group owner IP
-                        p2pManager.requestConnectionInfo(p2pChannel, info -> {
-                            handleConnectionInfo(info);
-                        });
+                        try {
+                            p2pManager.requestConnectionInfo(p2pChannel, info -> {
+                                handleConnectionInfo(info);
+                            });
+                        } catch (SecurityException e) {
+                            Log.w(TAG, "Cannot request P2P connection info (missing permission): "
+                                    + e.getMessage());
+                        } catch (Exception e) {
+                            Log.w(TAG, "Cannot request P2P connection info", e);
+                        }
                     } else {
                         Log.i(TAG, "Wi-Fi Direct connection lost");
                         groupOwnerIp.set(null);
@@ -258,7 +265,14 @@ public class WifiDirectManager {
     public void stopDiscovery() {
         if (!discovering.getAndSet(false)) return;
         if (p2pManager != null && p2pChannel != null) {
-            p2pManager.stopPeerDiscovery(p2pChannel, null);
+            try {
+                p2pManager.stopPeerDiscovery(p2pChannel, null);
+            } catch (SecurityException e) {
+                Log.w(TAG, "Cannot stop P2P discovery (missing permission): "
+                        + e.getMessage());
+            } catch (Exception e) {
+                Log.w(TAG, "Cannot stop P2P discovery", e);
+            }
         }
     }
 
@@ -305,17 +319,24 @@ public class WifiDirectManager {
      */
     public void disconnect() {
         if (p2pManager != null && p2pChannel != null) {
-            p2pManager.removeGroup(p2pChannel, new WifiP2pManager.ActionListener() {
-                @Override
-                public void onSuccess() {
-                    Log.i(TAG, "P2P group removed");
-                }
+            try {
+                p2pManager.removeGroup(p2pChannel, new WifiP2pManager.ActionListener() {
+                    @Override
+                    public void onSuccess() {
+                        Log.i(TAG, "P2P group removed");
+                    }
 
-                @Override
-                public void onFailure(int reason) {
-                    Log.w(TAG, "Failed to remove P2P group (reason=" + reason + ")");
-                }
-            });
+                    @Override
+                    public void onFailure(int reason) {
+                        Log.w(TAG, "Failed to remove P2P group (reason=" + reason + ")");
+                    }
+                });
+            } catch (SecurityException e) {
+                Log.w(TAG, "Cannot remove P2P group (missing permission): "
+                        + e.getMessage());
+            } catch (Exception e) {
+                Log.w(TAG, "Cannot remove P2P group", e);
+            }
         }
         groupOwnerIp.set(null);
         connectedDevice = null;
