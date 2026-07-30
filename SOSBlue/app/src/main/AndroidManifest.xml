@@ -24,6 +24,11 @@
     <!-- Notifications (runtime-dangerous on Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Storage permission for saving media to gallery (Android 9 and below, API < 29) -->
+    <!-- Android 10+ uses MediaStore which does not require storage permission -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
     <!-- Bluetooth permissions for P2P / classic Bluetooth mesh fallback -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />

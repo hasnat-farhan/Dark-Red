@@ -69,7 +69,23 @@ public class ChatAdapter extends ListAdapter<MessageModel, ChatAdapter.ViewHolde
     private static final ExecutorService bitmapExecutor = Executors.newSingleThreadExecutor();
     private static final Handler mainHandler = new Handler(Looper.getMainLooper());
 
+    /** Listener for download button clicks on incoming media. */
+    private OnDownloadClickListener downloadClickListener;
 
+    /**
+     * Interface for handling download of received media files.
+     */
+    public interface OnDownloadClickListener {
+        /** Called when the user taps the download button on an incoming media message. */
+        void onDownloadClick(MessageModel message);
+    }
+
+    /**
+     * Sets the listener for download button clicks.
+     */
+    public void setOnDownloadClickListener(OnDownloadClickListener listener) {
+        this.downloadClickListener = listener;
+    }
 
     public ChatAdapter() {
         super(DIFF_CALLBACK);
@@ -207,6 +223,21 @@ public class ChatAdapter extends ListAdapter<MessageModel, ChatAdapter.ViewHolde
                 holder.mediaInfo.setText(typeLabel + " " + sizeStr);
                 holder.mediaInfo.setVisibility(View.VISIBLE);
             }
+
+            // ── Download button (incoming media only) ─────────────────
+            if (holder.downloadButton != null) {
+                if (!msg.isSent() && downloadClickListener != null) {
+                    holder.downloadButton.setVisibility(View.VISIBLE);
+                    holder.downloadButton.setOnClickListener(v -> {
+                        if (downloadClickListener != null) {
+                            downloadClickListener.onDownloadClick(msg);
+                        }
+                    });
+                } else {
+                    holder.downloadButton.setVisibility(View.GONE);
+                    holder.downloadButton.setOnClickListener(null);
+                }
+            }
         }
 
         // ── Entrance animation ───────────────────────────────────
@@ -246,6 +277,7 @@ public class ChatAdapter extends ListAdapter<MessageModel, ChatAdapter.ViewHolde
         final ImageView transportIcon;
         final ImageView mediaPreview;
         final ImageView videoPlayIcon;
+        final ImageView downloadButton;
         final TextView mediaInfo;
         final ProgressBar mediaProgress;
 
@@ -256,6 +288,7 @@ public class ChatAdapter extends ListAdapter<MessageModel, ChatAdapter.ViewHolde
             transportIcon = itemView.findViewById(R.id.transportIcon);
             mediaPreview = itemView.findViewById(R.id.mediaPreview);
             videoPlayIcon = itemView.findViewById(R.id.videoPlayIcon);
+            downloadButton = itemView.findViewById(R.id.downloadButton);
             mediaInfo = itemView.findViewById(R.id.mediaInfo);
             mediaProgress = itemView.findViewById(R.id.mediaProgress);
         }

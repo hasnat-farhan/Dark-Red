@@ -6,6 +6,7 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -91,6 +92,12 @@ public class ChatActivity extends AppCompatActivity {
 
     /** Permission launcher for POST_NOTIFICATIONS (Android 13+). */
     private ActivityResultLauncher<String> notificationPermissionLauncher;
+
+    /** Permission launcher for WRITE_EXTERNAL_STORAGE (Android 9 and below). */
+    private ActivityResultLauncher<String> storagePermissionLauncher;
+
+    /** Holds the pending media message while waiting for storage permission grant. */
+    private MessageModel pendingDownloadMessage;
 
     /**
      * Saved transport mode BEFORE the user tapped SMS Relay — used to
@@ -228,6 +235,21 @@ public class ChatActivity extends AppCompatActivity {
                         // Re-fire transport mode now that permissions are confirmed
                         onTransportModeChanged(TransportMode.SOSBLUE_MESH);
                     }
+                });
+
+        // ── Runtime permission launcher for WRITE_EXTERNAL_STORAGE ────
+        // Only needed on Android 9 and below (API < 29) for saving media
+        // to the device gallery. On Android 10+, MediaStore is used instead
+        // and no storage permission is required.
+        storagePermissionLauncher = registerForActivityResult(
+                new ActivityResultContracts.RequestPermission(), granted -> {
+                    if (granted && pendingDownloadMessage != null) {
+                        saveMediaToGallery(pendingDownloadMessage);
+                    } else if (!granted) {
+                        ToastUtils.showShort(this,
+                                getString(R.string.download_permission_required));
+                    }
+                    pendingDownloadMessage = null;
                 });
 
         // ── Runtime permission launcher for SMS carrier ──────────────
@@ -599,6 +621,12 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
 
         RecyclerView chatList = findViewById(R.id.chatRecyclerView);
         chatAdapter = new ChatAdapter();
+
+        // ── Download button handler for incoming media ──────────────
+        // When the user taps the download icon on an incoming image/video,
+        // show a confirmation dialog and save to device gallery via MediaStore.
+        chatAdapter.setOnDownloadClickListener(this::showDownloadMediaDialog);
+
         chatList.setLayoutManager(new LinearLayoutManager(this));
         chatList.setAdapter(chatAdapter);
 
@@ -1575,6 +1603,265 @@ markMessageStatus(outbound, MessageModel.STATUS_FAILED);
                 .setMessage(R.string.dialog_about_message)
                 .setPositiveButton(R.string.dialog_ok, null)
                 .show();
+    }
+
+    // ---------------------------------------------------------------
+    //  Media Download — Save received media to device gallery
+    // ---------------------------------------------------------------
+
+    /**
+     * Shows a confirmation dialog before saving received media to the device gallery.
+     * Displays file name, size, and type. On confirm, requests storage permission
+     * (pre-Android 10) or directly saves using MediaStore (Android 10+).
+     */
+    private void showDownloadMediaDialog(MessageModel msg) {
+        if (isActivityDestroyed || msg == null) return;
+
+        String fileUri = msg.getMediaUri();
+        if (fileUri == null) {
+            ToastUtils.showShort(this, "Media file not available");
+            return;
+        }
+
+        String typeLabel = msg.isVideo() ? "video" : "image";
+        String fileName = "unknown";
+        if (fileUri != null) {
+            try {
+                Uri uri = Uri.parse(fileUri);
+                String path = uri.getPath();
+                if (path != null) {
+                    fileName = path.substring(path.lastIndexOf('/') + 1);
+                }
+            } catch (Exception ignored) {}
+        }
+        String sizeStr = msg.getFormattedSize();
+        String mimeType = msg.getMediaMimeType();
+        if (mimeType == null) mimeType = "application/octet-stream";
+
+        String message = String.format(
+                getString(R.string.download_media_message),
+                typeLabel, fileName, sizeStr.isEmpty() ? "Unknown" : sizeStr, mimeType
+        );
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.download_media_title)
+                .setMessage(message)
+                .setPositiveButton(R.string.download_media_confirm, (dialog, which) -> {
+                    saveMediaToGallery(msg);
+                })
+                .setNegativeButton(R.string.download_media_cancel, null)
+                .show();
+    }
+
+    /**
+     * Saves a received media file from the app's internal cache to the
+     * device's public gallery using MediaStore (Android 10+) or direct
+     * file write (Android 9 and below). Runs I/O on a background thread
+     * to avoid ANR on large video files.
+     */
+    private void saveMediaToGallery(MessageModel msg) {
+        if (msg == null || msg.getMediaUri() == null) return;
+
+        // ── Storage permission check for pre-Android 10 ────────────
+        // Android 10+ (API 29+) uses MediaStore - no storage permission needed.
+        // Android 9 and below needs WRITE_EXTERNAL_STORAGE.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            if (ContextCompat.checkSelfPermission(this,
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                    != PackageManager.PERMISSION_GRANTED) {
+                requestStoragePermissionForDownload(msg);
+                return;
+            }
+        }
+
+        final ChatActivity activity = this;
+        final String uriStr = msg.getMediaUri();
+        final String mimeType = (msg.getMediaMimeType() != null)
+                ? msg.getMediaMimeType()
+                : (msg.isVideo() ? "video/mp4" : "image/jpeg");
+        final boolean isVideo = msg.isVideo();
+
+        // Run I/O on background thread to keep UI responsive
+        new Thread(() -> {
+            try {
+                Uri cacheUri = Uri.parse(uriStr);
+                String path = cacheUri.getPath();
+                if (path == null) {
+                    runOnUiThread(() -> { if (isActivityDestroyed) return;
+                        ToastUtils.showShort(activity, "Media file path not found"); });
+                    return;
+                }
+
+                // Extract filename from path
+                String fileName = path.substring(path.lastIndexOf('/') + 1);
+                if (fileName.isEmpty()) fileName = "SOSBlue_media_" + System.currentTimeMillis();
+
+                File mediaFile = new File(path);
+                if (!mediaFile.exists()) {
+                    runOnUiThread(() -> { if (isActivityDestroyed) return;
+                        ToastUtils.showShort(activity, "Media file no longer available"); });
+                    return;
+                }
+
+                // Read file bytes
+                long fileLen = mediaFile.length();
+                if (fileLen > Integer.MAX_VALUE) {
+                    runOnUiThread(() -> { if (isActivityDestroyed) return;
+                        ToastUtils.showShort(activity, "File too large to save"); });
+                    return;
+                }
+                byte[] fileBytes;
+                try (java.io.FileInputStream fis = new java.io.FileInputStream(mediaFile)) {
+                    fileBytes = new byte[(int) fileLen];
+                    int offset = 0;
+                    int bytesRead;
+                    while (offset < fileBytes.length
+                            && (bytesRead = fis.read(fileBytes, offset, fileBytes.length - offset)) != -1) {
+                        offset += bytesRead;
+                    }
+                }
+
+                if (fileBytes.length == 0) {
+                    runOnUiThread(() -> { if (isActivityDestroyed) return;
+                        ToastUtils.showShort(activity, "Failed to read media file"); });
+                    return;
+                }
+
+                // Save based on API level
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    saveViaMediaStore(activity, fileBytes, fileName, mimeType, isVideo);
+                } else {
+                    saveViaDirectFile(activity, fileBytes, fileName, isVideo);
+                }
+            } catch (Exception e) {
+                Log.e("ChatActivity", "Failed to save media to gallery", e);
+                runOnUiThread(() -> { if (isActivityDestroyed) return;
+                    ToastUtils.showShort(activity,
+                            activity.getString(R.string.download_media_failed) + ": " + e.getMessage()); });
+            }
+        }).start();
+    }
+
+    /**
+     * Saves media to the device gallery using MediaStore API (Android 10+).
+     * This does NOT require any storage permission. Runs on the calling thread
+     * — caller should invoke from a background thread for large files.
+     */
+    private void saveViaMediaStore(android.content.Context context,
+                                    byte[] fileBytes, String fileName,
+                                    String mimeType, boolean isVideo) {
+        try {
+            // Determine the target collection and directory
+            Uri collection;
+            String relativePath;
+            if (isVideo) {
+                collection = android.provider.MediaStore.Video.Media
+                        .EXTERNAL_CONTENT_URI;
+                relativePath = Environment.DIRECTORY_MOVIES + "/SOSBlue";
+            } else {
+                collection = android.provider.MediaStore.Images.Media
+                        .EXTERNAL_CONTENT_URI;
+                relativePath = Environment.DIRECTORY_PICTURES + "/SOSBlue";
+            }
+
+            // Create metadata
+            android.content.ContentValues values = new android.content.ContentValues();
+            values.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, fileName);
+            values.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, mimeType);
+            values.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, relativePath);
+
+            // Mark as pending so other apps don't see incomplete file
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                values.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1);
+            }
+
+            Uri uri = context.getContentResolver().insert(collection, values);
+            if (uri == null) {
+                runOnUiThread(() ->
+                        ToastUtils.showShort(context, "Failed to create media entry in gallery"));
+                return;
+            }
+
+            // Write the file bytes
+            try (java.io.OutputStream os = context.getContentResolver().openOutputStream(uri)) {
+                if (os == null) {
+                    runOnUiThread(() ->
+                            ToastUtils.showShort(context, "Failed to open output stream"));
+                    return;
+                }
+                os.write(fileBytes);
+                os.flush();
+            }
+
+            // Mark as complete
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                values.clear();
+                values.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0);
+                context.getContentResolver().update(uri, values, null, null);
+            }
+
+            runOnUiThread(() ->
+                    ToastUtils.showShort(context, context.getString(R.string.download_media_saved)));
+            Log.i("ChatActivity", "Media saved to gallery: " + fileName);
+
+        } catch (Exception e) {
+            Log.e("ChatActivity", "Failed to save via MediaStore", e);
+            runOnUiThread(() ->
+                    ToastUtils.showShort(context,
+                            context.getString(R.string.download_media_failed) + ": " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Saves media directly to external storage (Android 9 and below).
+     * Requires WRITE_EXTERNAL_STORAGE permission. Runs on the calling
+     * thread — caller should invoke from a background thread.
+     */
+    private void saveViaDirectFile(android.content.Context context,
+                                    byte[] fileBytes, String fileName,
+                                    boolean isVideo) {
+        try {
+            // Determine directory based on media type
+            String dirType = isVideo
+                    ? Environment.DIRECTORY_MOVIES
+                    : Environment.DIRECTORY_PICTURES;
+            File mediaDir = Environment.getExternalStoragePublicDirectory(dirType);
+            File sosblueDir = new File(mediaDir, "SOSBlue");
+            sosblueDir.mkdirs();
+
+            File outFile = new File(sosblueDir, fileName);
+
+            try (java.io.FileOutputStream fos = new java.io.FileOutputStream(outFile)) {
+                fos.write(fileBytes);
+                fos.flush();
+            }
+
+            // Notify the media scanner so the file appears immediately
+            try {
+                Intent scanIntent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
+                scanIntent.setData(Uri.fromFile(outFile));
+                context.sendBroadcast(scanIntent);
+            } catch (Exception ignored) {}
+
+            runOnUiThread(() -> { if (isActivityDestroyed) return;
+                    ToastUtils.showShort(context, context.getString(R.string.download_media_saved)); });
+            Log.i("ChatActivity", "Media saved to: " + outFile.getAbsolutePath());
+
+        } catch (Exception e) {
+            Log.e("ChatActivity", "Failed to save directly to storage", e);
+            runOnUiThread(() -> { if (isActivityDestroyed) return;
+                    ToastUtils.showShort(context,
+                            context.getString(R.string.download_media_failed) + ": " + e.getMessage()); });
+        }
+    }
+
+    /**
+     * Requests WRITE_EXTERNAL_STORAGE permission on Android 9 and below.
+     * Stores the pending message so the callback can retry the save.
+     */
+    private void requestStoragePermissionForDownload(MessageModel msg) {
+        pendingDownloadMessage = msg;
+        storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE);
     }
 
     private void onMediaSelected(Uri uri) {

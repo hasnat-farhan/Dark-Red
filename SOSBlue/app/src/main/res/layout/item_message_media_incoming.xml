@@ -60,6 +60,23 @@
                 android:visibility="gone"
                 android:contentDescription="Play video" />
 
+            <!-- Download button overlay (top-right corner) -->
+            <ImageView
+                android:id="@+id/downloadButton"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_gravity="top|end"
+                android:layout_marginTop="8dp"
+                android:layout_marginEnd="8dp"
+                android:src="@drawable/ic_download"
+                android:background="@drawable/circle_bg"
+                android:backgroundTint="#CC000000"
+                android:scaleType="centerInside"
+                android:padding="6dp"
+                android:elevation="2dp"
+                android:visibility="gone"
+                android:contentDescription="Download media" />
+
             <!-- Progress bar for uploading -->
             <ProgressBar
                 android:id="@+id/mediaProgress"

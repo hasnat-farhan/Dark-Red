@@ -97,6 +97,19 @@ All messages are end-to-end encrypted.</string>
     <string name="settings_switched_toast">Switched to %s</string>
     <string name="settings_back">Back</string>
 
+    <!-- Media Download -->
+    <string name="download_media_title">Save Media</string>
+    <string name="download_media_message">Save this %s to your device?
+
+File: %s
+Size: %s
+Type: %s</string>
+    <string name="download_media_confirm">Save to Gallery</string>
+    <string name="download_media_cancel">Cancel</string>
+    <string name="download_media_saved">Media saved to gallery 📁</string>
+    <string name="download_media_failed">Failed to save media</string>
+    <string name="download_permission_required">Storage permission needed to save media</string>
+
     <!-- Main Screen -->
     <string name="start_new_chat">Start New Chat</string>
 </resources>
