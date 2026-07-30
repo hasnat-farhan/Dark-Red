@@ -401,12 +401,11 @@ public class WifiDirectManager {
         if (info == null) return;
 
         String goIp = null;
-        if (info.groupOwnerAddress != null) {                        // info.groupOwnerAddress IS an InetAddress; call getHostAddress()
-                        // directly to get the dotted-decimal IP string.
-                        InetAddress addr = info.groupOwnerAddress;
-                        if (addr != null) {
-                            goIp = addr.getHostAddress();
-                        }
+        if (info.groupOwnerAddress != null) {
+            InetAddress addr = info.groupOwnerAddress;
+            if (addr != null) {
+                goIp = addr.getHostAddress();
+            }
         }
 
         Log.i(TAG, "P2P connection info: groupOwner=" + info.isGroupOwner

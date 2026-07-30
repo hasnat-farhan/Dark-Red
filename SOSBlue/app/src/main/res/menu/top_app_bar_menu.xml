@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item
+        android:id="@+id/menu_chats"
+        android:icon="@drawable/ic_bottom_chat"
+        android:title="@string/menu_switch_chat" />
+
+    <item
+        android:id="@+id/menu_news_feed"
+        android:icon="@drawable/ic_rss"
+        android:title="@string/menu_switch_news" />
+
+    <item
+        android:id="@+id/menu_transport"
+        android:title="@string/dialog_transport_title">
+        <menu>
+            <group android:checkableBehavior="single">
+                <item
+                    android:id="@+id/menu_transport_mesh"
+                    android:checked="true"
+                    android:title="@string/transport_sosblue_mesh" />
+                <item
+                    android:id="@+id/menu_transport_f2p"
+                    android:title="@string/transport_f2p_serverless" />
+                <item
+                    android:id="@+id/menu_transport_sms"
+                    android:title="@string/transport_sms" />
+            </group>
+        </menu>
+    </item>
+
+    <item
+        android:id="@+id/menu_settings"
+        android:icon="@drawable/ic_settings"
+        android:title="@string/menu_settings" />
+
+    <item
+        android:id="@+id/menu_about"
+        android:title="@string/menu_about" />
+
+</menu>

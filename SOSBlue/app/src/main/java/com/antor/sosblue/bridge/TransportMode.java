@@ -1,5 +1,6 @@
 package com.antor.sosblue.bridge;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Build;
@@ -82,11 +83,9 @@ public enum TransportMode {
      * Returns {@code true} when running inside an isolated / sandboxed
      * child process where privileged system services are unavailable.
      */
+    @SuppressLint("NewApi")
     private static boolean isIsolatedProcess() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
-            return Process.isIsolated();
-        }
-        return false;
+        return Process.isIsolated();
     }
 
     // ----------------------------------------------------------------
@@ -135,6 +134,7 @@ public enum TransportMode {
             // here and won't crash if the permission is denied; it
             // will simply return null and we treat that as
             // "no SIM → unavailable".
+            @SuppressLint("MissingPermission")
             String subscriberId = tm.getSubscriberId();
             return subscriberId != null && !subscriberId.isEmpty();
         } catch (Throwable t) {

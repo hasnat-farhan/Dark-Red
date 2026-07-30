@@ -39,6 +39,6 @@
             android:layout_gravity="end"
             android:layout_marginTop="4dp"
             android:textColor="@color/bubble_outgoing_timestamp"
-            android:textSize="11sp" />
+            android:textSize="12sp" />
     </LinearLayout>
 </LinearLayout>

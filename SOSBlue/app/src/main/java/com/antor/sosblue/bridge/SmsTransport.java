@@ -100,6 +100,17 @@ public class SmsTransport {
         this.appContext = context.getApplicationContext();
     }
 
+    /**
+     * Shuts down the background executor. Call when done with this transport.
+     */
+    public void shutdown() {
+        try {
+            executor.shutdownNow();
+        } catch (Exception e) {
+            Log.w(TAG, "Executor shutdown failed: " + e.getMessage());
+        }
+    }
+
     // ----------------------------------------------------------------
     //  Listener API
     // ----------------------------------------------------------------

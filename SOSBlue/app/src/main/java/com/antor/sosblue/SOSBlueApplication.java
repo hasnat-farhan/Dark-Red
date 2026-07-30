@@ -1,5 +1,6 @@
 package com.antor.sosblue;
 
+import android.annotation.SuppressLint;
 import android.app.Application;
 import android.os.Build;
 import android.os.Process;
@@ -60,11 +61,8 @@ public class SOSBlueApplication extends Application {
      * sandboxed child process where privileged system services are
      * unavailable.
      */
+    @SuppressLint("NewApi")
     private boolean isIsolatedProcess() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
-            return Process.isIsolated();
-        }
-        // Pre-4.2 devices do not support isolated processes.
-        return false;
+        return Process.isIsolated();
     }
 }

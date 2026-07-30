@@ -52,7 +52,7 @@
 
         <LinearLayout
             android:id="@+id/titleContainer"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:gravity="start"
@@ -77,8 +77,8 @@
                 android:layout_width="wrap_content"
                 android:layout_height="match_parent"
                 android:layout_marginStart="2dp"
-                android:layout_weight="1"
-                android:gravity="center|start"
+                android:layout_gravity="end"
+                android:gravity="center"
                 android:orientation="horizontal">
 
                 <ImageView
@@ -88,7 +88,7 @@
                     android:paddingTop="4dp"
                     android:scaleType="centerInside"
                     android:src="@drawable/ic_down"
-                    android:tint="@color/icon_tint" />
+                    app:tint="@color/icon_tint" />
 
                 <LinearLayout
                     android:layout_width="wrap_content"
@@ -104,7 +104,7 @@
                         android:gravity="center"
                         android:text="99+"
                         android:textColor="#FFFFFF"
-                        android:textSize="10sp" />
+                        android:textSize="12sp" />
                 </LinearLayout>
 
             </LinearLayout>
@@ -157,7 +157,7 @@
             android:padding="8dp"
             android:scaleType="centerInside"
             android:src="@drawable/search"
-            android:tint="@color/icon_tint" />
+            app:tint="@color/icon_tint" />
 
         <ImageView
             android:id="@+id/discoverIcon"
@@ -167,7 +167,7 @@
             android:padding="8dp"
             android:scaleType="centerInside"
             android:src="@drawable/feed"
-            android:tint="@color/primary_red" />
+            app:tint="@color/primary_red" />
 
         <ImageView
             android:id="@+id/threeDotIcon"
@@ -177,7 +177,7 @@
             android:padding="8dp"
             android:scaleType="centerInside"
             android:src="@drawable/dot3"
-            android:tint="@color/icon_tint" />
+            app:tint="@color/icon_tint" />
 
 
     </LinearLayout>
@@ -385,7 +385,7 @@
             android:layout_marginStart="8dp"
             android:padding="4dp"
             android:src="@drawable/close"
-            android:tint="@color/icon_tint"/>
+            app:tint="@color/icon_tint"/>
     </LinearLayout>
 
     <LinearLayout
@@ -413,7 +413,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginRight="6dp"
                 android:src="@drawable/text"
-                android:tint="@color/attachment_icon" />
+                app:tint="@color/attachment_icon" />
 
         </LinearLayout>
 
@@ -503,7 +503,7 @@
                 android:background="@drawable/bg_send_button"
                 android:foreground="?android:attr/selectableItemBackgroundBorderless"
                 android:padding="10dp"
-                android:tint="@color/white"/>
+                app:tint="@color/white"/>
 
             <FrameLayout
                 android:id="@+id/loadingContainer"

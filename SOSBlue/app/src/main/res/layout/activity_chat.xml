@@ -84,7 +84,7 @@
                 android:paddingHorizontal="2dp"
                 android:text="0"
                 android:textColor="@color/badge_text"
-                android:textSize="10sp"
+                android:textSize="12sp"
                 android:visibility="gone" />
         </LinearLayout>
 
@@ -96,7 +96,7 @@
             android:padding="6dp"
             android:scaleType="centerInside"
             android:src="@drawable/search"
-            android:tint="@color/icon_tint"
+            app:tint="@color/icon_tint"
             android:clickable="true"
             android:focusable="true"
             android:background="?android:attr/selectableItemBackgroundBorderless" />
@@ -108,7 +108,7 @@
             android:padding="6dp"
             android:scaleType="centerInside"
             android:src="@drawable/feed"
-            android:tint="@color/primary_red"
+            app:tint="@color/primary_red"
             android:clickable="true"
             android:focusable="true"
             android:background="?android:attr/selectableItemBackgroundBorderless" />
@@ -120,7 +120,53 @@
             android:padding="6dp"
             android:scaleType="centerInside"
             android:src="@drawable/dot3"
-            android:tint="@color/icon_tint"
+            app:tint="@color/icon_tint"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="?android:attr/selectableItemBackgroundBorderless" />
+
+    </LinearLayout>
+
+    <!-- ============================================================
+         Search bar overlay (hidden by default — toggled by search icon)
+         ============================================================ -->
+    <LinearLayout
+        android:id="@+id/searchBarOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/top_bar_background"
+        android:orientation="horizontal"
+        android:paddingHorizontal="12dp"
+        android:paddingBottom="8dp"
+        android:visibility="gone">
+
+        <EditText
+            android:id="@+id/searchInput"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@drawable/bg_input_pill"
+            android:hint="Search messages by text or sender..."
+            android:textColorHint="@color/input_hint"
+            android:imeOptions="actionSearch"
+            android:inputType="text"
+            android:singleLine="true"
+            android:paddingStart="14dp"
+            android:paddingTop="10dp"
+            android:paddingEnd="14dp"
+            android:paddingBottom="10dp"
+            android:textColor="@color/input_text"
+            android:textSize="14sp" />
+
+        <ImageView
+            android:id="@+id/searchCloseIcon"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_marginStart="8dp"
+            android:padding="8dp"
+            android:scaleType="centerInside"
+            android:src="@drawable/close"
+            app:tint="@color/icon_tint"
             android:clickable="true"
             android:focusable="true"
             android:background="?android:attr/selectableItemBackgroundBorderless" />
@@ -270,7 +316,7 @@
             android:layout_height="20dp"
             android:src="@drawable/sent"
             android:scaleType="centerInside"
-            android:tint="@color/recipient_icon_tint"
+            app:tint="@color/recipient_icon_tint"
             android:layout_marginEnd="8dp"
             android:contentDescription="Encrypt" />
 
@@ -304,7 +350,7 @@
             android:paddingVertical="3dp"
             android:text="E2E"
             android:textColor="@color/badge_text"
-            android:textSize="10sp"
+            android:textSize="12sp"
             android:textStyle="bold"
             android:visibility="gone"
             android:contentDescription="End-to-end encryption active" />
@@ -335,7 +381,7 @@
             android:scaleType="centerInside"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:contentDescription="Attach file"
-            android:tint="@color/attachment_icon" />
+            app:tint="@color/attachment_icon" />
 
         <!-- Message input (pill-shaped) -->
         <EditText
@@ -374,7 +420,7 @@
                 android:background="@drawable/bg_send_button"
                 android:foreground="?android:attr/selectableItemBackgroundBorderless"
                 android:padding="10dp"
-                android:tint="@color/white"
+                app:tint="@color/white"
                 android:contentDescription="Send message" />
 
             <FrameLayout

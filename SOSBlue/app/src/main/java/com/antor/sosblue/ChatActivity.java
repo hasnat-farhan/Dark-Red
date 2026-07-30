@@ -37,6 +37,7 @@ import com.antor.f2p.engine.api.EngineConfig;
 import com.antor.f2p.engine.api.FibrePacket;
 import com.antor.sosblue.bridge.F2PBridge;
 import com.antor.sosblue.bridge.TransportMode;
+import com.antor.sosblue.inbox.ConversationRegistry;
 import com.antor.sosblue.identity.F2PMessage;
 import com.antor.sosblue.identity.MessageEncryptor;
 import com.antor.sosblue.identity.UserIdentity;
@@ -85,6 +86,12 @@ public class ChatActivity extends AppCompatActivity {
     // Chat
     private ChatAdapter chatAdapter;
 
+    /** Full unfiltered message list for search filtering. */
+    private final java.util.List<MessageModel> allMessages = new java.util.ArrayList<>();
+
+    /** Search bar visibility state. */
+    private boolean searchVisible = false;
+
     // Media picker — supports both images AND videos
     private ActivityResultLauncher<String[]> mediaPickerLauncher;
 
@@ -99,6 +106,9 @@ public class ChatActivity extends AppCompatActivity {
     private TextView peerCountBadge;
     private EditText inputRecipientPhone;
     private TextView encryptionBadge;
+
+    /** Search input field reference for filtering. */
+    private EditText searchInput;
 
     // ---------------------------------------------------------------
     //  Lifecycle
@@ -207,6 +217,36 @@ public class ChatActivity extends AppCompatActivity {
 
         bridge = new F2PBridge(this);
 
+        // ── Register local user identity in the display-name cache ──
+        // This ensures the user's own name is known, and also sets a
+        // precedent for populating known-discovered peers.
+        String myKnownPhone = UserIdentity.getPhoneNumber(this);
+        String myKnownName = UserIdentity.getUsername(this);
+        if (myKnownPhone != null && myKnownName != null) {
+            com.antor.sosblue.notification.NotificationHelper
+                    .registerDisplayName(myKnownPhone, myKnownName);
+        }
+
+        // ── Register peer discovery listener ────────────────────────
+        // Populates the NotificationHelper's phone→display-name cache
+        // so incoming message notifications show the sender's username
+        // instead of a raw phone number.
+        bridge.addPeerDiscoveryListener(new F2PBridge.PeerDiscoveryListener() {
+            @Override
+            public void onPeerDiscovered(String nodeId, String username,
+                                          String phone, String ipAddress, int port) {
+                if (phone != null && username != null && !username.isEmpty()) {
+                    com.antor.sosblue.notification.NotificationHelper
+                            .registerDisplayName(phone, username);
+                }
+            }
+
+            @Override
+            public void onPeerLost(String nodeId) {
+                // No-op: we keep the cached name even after peer disappears
+            }
+        });
+
         // ── Register SMS error listener ─────────────────────────────
         // Surfaces synchronous SMS send failures (no telephony, no
         // sender phone, SecurityException) via Snackbar so the user
@@ -281,27 +321,69 @@ public class ChatActivity extends AppCompatActivity {
                     String decryptedText = new String(decryptedBytes, java.nio.charset.StandardCharsets.UTF_8);
                     final String sender = senderPhone;
                     final String text = decryptedText;
+                    final boolean isMeshBroadcast = "mesh".equals(signalType);
                     runOnUiThread(() -> {
+                        if (isActivityDestroyed) return;
                         MessageModel inbound = new MessageModel(text, false, sender, myPhone);
+                        allMessages.add(inbound);
                         java.util.List<MessageModel> updated = new ArrayList<>(
                                 chatAdapter.getCurrentList());
                         updated.add(inbound);
                         chatAdapter.submitList(updated);
+                        
+                        // ── Register in conversation inbox ──────────────────
+                        String resolvedName = com.antor.sosblue.notification.NotificationHelper
+                                .lookupDisplayName(sender);
+                        ConversationRegistry.update(
+                                sender,
+                                resolvedName,
+                                text,
+                                System.currentTimeMillis(),
+                                false,  // isOutgoing
+                                false,  // hasMedia
+                                true    // incrementUnread (incoming message)
+                        );
+
+                        // ── Post notification if activity is not in foreground ──
+                        // Mesh-broadcast messages are treated as group conversations
+                        // (multi-sender), while F2P/SMS messages are 1:1.
+                        String localPhone = UserIdentity.getPhoneNumber(ChatActivity.this);
+                        if (localPhone != null && !localPhone.equals(sender)) {
+                            com.antor.sosblue.notification.NotificationHelper nh =
+                                    new com.antor.sosblue.notification.NotificationHelper(ChatActivity.this);
+                            if (isMeshBroadcast) {
+                                // Group notification with per-sender attribution
+                                nh.notifyGroupMessage(
+                                        "sosblue_mesh_broadcast",   // groupId
+                                        "SOSBlue Mesh",             // groupName
+                                        sender,                     // senderPhone
+                                        sender,                     // senderName (lookupDisplayName resolves it)
+                                        text);
+                            } else {
+                                // 1:1 conversation notification
+                                nh.notifyIncomingMessage(sender, text);
+                            }
+                        }
                     });
                 } catch (Exception e) {
                     android.util.Log.e("ChatActivity", "Failed to process incoming F2P message", e);
-                    runOnUiThread(() -> {
-                        String senderInfo = "unknown sender";
-                        try {
-                            String payloadStr2 = new String(packet.getRawDataBuffer(),
-                                    java.nio.charset.StandardCharsets.UTF_8);
-                            String sender2 = JsonPayloadHelper.extractField(payloadStr2, "sender_phone");
-                            if (sender2 != null) senderInfo = sender2;
-                        } catch (Exception ignored) {}
-                        Snackbar.make(findViewById(R.id.root),
-                                "⚠ Could not decrypt message from " + senderInfo,
-                                Snackbar.LENGTH_LONG).show();
-                    });
+                    if (!isActivityDestroyed) {
+                        runOnUiThread(() -> {
+                            if (isActivityDestroyed) return;
+                            String senderInfo = "unknown sender";
+                            try {
+                                String payloadStr2 = new String(packet.getRawDataBuffer(),
+                                        java.nio.charset.StandardCharsets.UTF_8);
+                                String sender2 = JsonPayloadHelper.extractField(payloadStr2, "sender_phone");
+                                if (sender2 != null) senderInfo = sender2;
+                            } catch (Exception ignored) {}
+                            View root = findViewById(R.id.root);
+                            if (root == null) return;
+                            Snackbar.make(root,
+                                    "⚠ Could not decrypt message from " + senderInfo,
+                                    Snackbar.LENGTH_LONG).show();
+                        });
+                    }
                 }
             }
         });
@@ -340,9 +422,23 @@ public class ChatActivity extends AppCompatActivity {
                     final String finalText = text;
                     runOnUiThread(() -> {
                         MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone);
+                        allMessages.add(inbound);
                         java.util.List<MessageModel> updated = new ArrayList<>(chatAdapter.getCurrentList());
                         updated.add(inbound);
                         chatAdapter.submitList(updated);
+
+                        // ── Register in conversation inbox ──────────────────
+                        String smsResolved = com.antor.sosblue.notification.NotificationHelper
+                                .lookupDisplayName(finalSender);
+                        ConversationRegistry.update(
+                                finalSender,
+                                smsResolved,
+                                finalText,
+                                System.currentTimeMillis(),
+                                false,  // isOutgoing
+                                false,  // hasMedia
+                                true    // incrementUnread
+                        );
                     });
                 } catch (Exception e) {
                     android.util.Log.e("ChatActivity", "Failed to decrypt inbound SMS F2P envelope", e);
@@ -364,6 +460,7 @@ public class ChatActivity extends AppCompatActivity {
         peerCountBadge = findViewById(R.id.peerCountBadge);
         inputRecipientPhone = findViewById(R.id.inputRecipientPhone);
         encryptionBadge = findViewById(R.id.encryptionBadge);
+        searchInput = findViewById(R.id.searchInput);
 
         // ── Recipient phone → E2E badge visibility ───────────────
         // Show the red "E2E" badge whenever the user has typed a valid
@@ -391,6 +488,8 @@ public class ChatActivity extends AppCompatActivity {
             if (titleView != null) {
                 titleView.setText(displayName);
             }
+            // Mark conversation as read when opened from inbox
+            ConversationRegistry.markRead(recipientFromIntent);
             ToastUtils.showShort(this, "Chat with " + displayName);
         } else {
             // Fall back to the user's own phone (for self-testing)
@@ -473,12 +572,111 @@ public class ChatActivity extends AppCompatActivity {
         //  Top action bar buttons
         // ---------------------------------------------------------------
 
-        findViewById(R.id.searchIcon).setOnClickListener(v ->
-                ToastUtils.showShort(this, "Search"));
-        findViewById(R.id.discoverIcon).setOnClickListener(v ->
-                ToastUtils.showShort(this, "Discover"));
-        findViewById(R.id.threeDotIcon).setOnClickListener(v ->
-                ToastUtils.showShort(this, "Menu"));
+        // Search icon → Toggle smooth expanding search bar overlay
+        findViewById(R.id.searchIcon).setOnClickListener(v -> toggleSearchBar());
+        findViewById(R.id.searchCloseIcon).setOnClickListener(v -> hideSearchBar());
+
+        // Search input listener for filtering messages
+        searchInput = findViewById(R.id.searchInput);
+        searchInput.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            @Override
+            public void afterTextChanged(android.text.Editable s) {
+                String query = s.toString().toLowerCase(java.util.Locale.ROOT).trim();
+                // Filter visible messages — we iterate the current list
+                // and update visibility. Since we use ListAdapter with
+                // submitList, we re-submit with the filtered set.
+                java.util.List<MessageModel> current = new ArrayList<>(chatAdapter.getCurrentList());
+                if (query.isEmpty()) {
+                    chatAdapter.submitList(new ArrayList<>(allMessages));
+                } else {
+                    java.util.List<MessageModel> filtered = new ArrayList<>();
+                    for (MessageModel msg : allMessages) {
+                        if (msg.getText().toLowerCase(java.util.Locale.ROOT).contains(query)
+                                || (msg.getSenderPhone() != null
+                                    && msg.getSenderPhone().toLowerCase(java.util.Locale.ROOT).contains(query))) {
+                            filtered.add(msg);
+                        }
+                    }
+                    chatAdapter.submitList(filtered);
+                }
+            }
+        });
+
+        // Broadcast (RSS) icon → Open NewsFeedActivity
+        findViewById(R.id.discoverIcon).setOnClickListener(v -> {
+            Intent newsIntent = new Intent(ChatActivity.this,
+                    com.antor.sosblue.news.NewsFeedActivity.class);
+            startActivity(newsIntent);
+        });
+
+        // Overflow menu (3 dots) → PopupMenu with options
+        findViewById(R.id.threeDotIcon).setOnClickListener(v -> {
+            android.widget.PopupMenu popup = new android.widget.PopupMenu(ChatActivity.this, v);
+            popup.getMenuInflater().inflate(R.menu.top_app_bar_menu, popup.getMenu());
+
+            // Mark the current transport mode as checked
+            TransportMode currentMode = TransportMode.load(ChatActivity.this);
+            switch (currentMode) {
+                case F2P_SERVERLESS:
+                    popup.getMenu().findItem(R.id.menu_transport_f2p).setChecked(true);
+                    break;
+                case SMS_FALLBACK:
+                    popup.getMenu().findItem(R.id.menu_transport_sms).setChecked(true);
+                    break;
+                default:
+                    popup.getMenu().findItem(R.id.menu_transport_mesh).setChecked(true);
+                    break;
+            }
+
+            popup.setOnMenuItemClickListener(item -> {
+                int id = item.getItemId();
+                if (id == R.id.menu_chats) {
+                    // Already in Chat Feed
+                    return true;
+                } else if (id == R.id.menu_news_feed) {
+                    startActivity(new Intent(ChatActivity.this,
+                            com.antor.sosblue.news.NewsFeedActivity.class));
+                    return true;
+                } else if (id == R.id.menu_transport_mesh) {
+                    TransportMode.SOSBLUE_MESH.save(ChatActivity.this);
+                    transportRadioGroup.check(R.id.rb_sosblue_mesh);
+                    onTransportModeChanged(TransportMode.SOSBLUE_MESH);
+                    ToastUtils.showShort(ChatActivity.this,
+                            "Switched to " + TransportMode.SOSBLUE_MESH.getLabel());
+                    return true;
+                } else if (id == R.id.menu_transport_f2p) {
+                    TransportMode.F2P_SERVERLESS.save(ChatActivity.this);
+                    transportRadioGroup.check(R.id.rb_f2p_serverless);
+                    onTransportModeChanged(TransportMode.F2P_SERVERLESS);
+                    ToastUtils.showShort(ChatActivity.this,
+                            "Switched to " + TransportMode.F2P_SERVERLESS.getLabel());
+                    return true;
+                } else if (id == R.id.menu_transport_sms) {
+                    if (!TransportMode.SMS_FALLBACK.isAvailable(ChatActivity.this)) {
+                        ToastUtils.showShort(ChatActivity.this,
+                                R.string.transport_sms_unavailable);
+                        return true;
+                    }
+                    TransportMode.SMS_FALLBACK.save(ChatActivity.this);
+                    transportRadioGroup.check(R.id.rb_sms_fallback);
+                    onTransportModeChanged(TransportMode.SMS_FALLBACK);
+                    ToastUtils.showShort(ChatActivity.this,
+                            "Switched to " + TransportMode.SMS_FALLBACK.getLabel());
+                    return true;
+                } else if (id == R.id.menu_settings) {
+                    startActivity(new Intent(ChatActivity.this,
+                            com.antor.sosblue.settings.SettingsActivity.class));
+                    return true;
+                } else if (id == R.id.menu_about) {
+                    showAboutDialog();
+                    return true;
+                }
+                return false;
+            });
+            popup.show();
+        });
 
         // "Nearby Devices" title → toggle peer bar
         findViewById(R.id.titleContainer).setOnClickListener(v -> {
@@ -534,17 +732,37 @@ public class ChatActivity extends AppCompatActivity {
         });
     }
 
+    private volatile boolean isActivityDestroyed = false;
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        // Activity going to background — resources preserved for potential resume,
+        // full cleanup happens in onDestroy
+    }
+
     @Override
     protected void onDestroy() {
-        if (bridge != null) {
-            bridge.stopEngine();
-        }
-        if (pendingSmsTransport != null) {
-            if (smsEnvelopeListener != null) {
-                pendingSmsTransport.removeEnvelopeListener(smsEnvelopeListener);
+        isActivityDestroyed = true;
+        try {
+            if (bridge != null) {
+                bridge.stopEngine();
+                bridge = null;
             }
-            pendingSmsTransport.unregister();
-            pendingSmsTransport = null;
+        } catch (Exception e) {
+            Log.w("ChatActivity", "Error stopping engine in onDestroy", e);
+        }
+        try {
+            if (pendingSmsTransport != null) {
+                if (smsEnvelopeListener != null) {
+                    pendingSmsTransport.removeEnvelopeListener(smsEnvelopeListener);
+                }
+                pendingSmsTransport.unregister();
+                pendingSmsTransport.shutdown();
+                pendingSmsTransport = null;
+            }
+        } catch (Exception e) {
+            Log.w("ChatActivity", "Error cleaning up SMS transport in onDestroy", e);
         }
         smsEnvelopeListener = null;
         super.onDestroy();
@@ -689,6 +907,20 @@ public class ChatActivity extends AppCompatActivity {
         // 3. Render locally (with F2P identity)
         String myPhone = UserIdentity.getPhoneNumber(this);
         MessageModel outbound = new MessageModel(messageText, true, myPhone, recipientPhone);
+        allMessages.add(outbound);
+
+        // ── Register in conversation inbox ──────────────────────
+        String resolvedRecipientName = com.antor.sosblue.notification.NotificationHelper
+                .lookupDisplayName(recipientPhone);
+        ConversationRegistry.update(
+                recipientPhone,
+                resolvedRecipientName,
+                messageText,
+                System.currentTimeMillis(),
+                true,   // isOutgoing
+                false,  // hasMedia
+                false   // incrementUnread (reset on outgoing)
+        );
         java.util.List<MessageModel> updated = new ArrayList<>(chatAdapter.getCurrentList());
         updated.add(outbound);
 
@@ -921,6 +1153,66 @@ public class ChatActivity extends AppCompatActivity {
                 : getString(R.string.sms_send_failed) + ": " + reason;
         new android.os.Handler(android.os.Looper.getMainLooper()).post(() ->
                 Snackbar.make(findViewById(R.id.root), msg, Snackbar.LENGTH_LONG).show());
+    }
+
+    // ---------------------------------------------------------------
+    //  Search bar toggle
+    // ---------------------------------------------------------------
+
+    private void toggleSearchBar() {
+        if (searchVisible) {
+            hideSearchBar();
+        } else {
+            showSearchBar();
+        }
+    }
+
+    private void showSearchBar() {
+        searchVisible = true;
+        View searchBar = findViewById(R.id.searchBarOverlay);
+        if (searchBar != null) {
+            searchBar.setVisibility(View.VISIBLE);
+            searchBar.setAlpha(0f);
+            searchBar.animate().alpha(1f).setDuration(200).start();
+        }
+        if (searchInput != null) {
+            searchInput.requestFocus();
+        }
+    }
+
+    private void hideSearchBar() {
+        searchVisible = false;
+        View searchBar = findViewById(R.id.searchBarOverlay);
+        if (searchBar != null) {
+            searchBar.animate().alpha(0f).setDuration(200)
+                    .withEndAction(() -> searchBar.setVisibility(View.GONE))
+                    .start();
+        }
+        if (searchInput != null) {
+            searchInput.setText("");
+        }
+        // Restore full list
+        if (!allMessages.isEmpty()) {
+            chatAdapter.submitList(new ArrayList<>(allMessages));
+        }
+    }
+
+    // ---------------------------------------------------------------
+    //  Dialogs
+    // ---------------------------------------------------------------
+
+    private void showAboutDialog() {
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("About SOSBlue")
+                .setMessage("SOSBlue — Secure Offline-Safe Blue Messenger\n\n"
+                        + "Version 1.0\n\n"
+                        + "A peer-to-peer messaging app with 3-tier transport:\n"
+                        + "\u2022 SOSBlue Mesh (BLE/WiFi-Direct P2P)\n"
+                        + "\u2022 F2P Serverless (WanderingFibreEngine)\n"
+                        + "\u2022 SMS Relay (carrier fallback)\n\n"
+                        + "All messages are end-to-end encrypted.")
+                .setPositiveButton("OK", null)
+                .show();
     }
 
     private void onMediaSelected(Uri uri) {

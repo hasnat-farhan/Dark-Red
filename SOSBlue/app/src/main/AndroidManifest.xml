@@ -14,9 +14,15 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <!-- COARSE must accompany FINE on Android 12+ (users can grant only COARSE) -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"
+        android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" />
+
+    <!-- Notifications (runtime-dangerous on Android 13+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Bluetooth permissions for P2P / classic Bluetooth mesh fallback -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
@@ -28,12 +34,9 @@
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
 
-    <!-- Wi-Fi Direct / P2P (for direct device-to-device connections) -->
-    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
-
-    <!-- Wi-Fi Direct P2P required features (optional — app still works without it) -->
+    <!-- Hardware features (all optional — app degrades gracefully) -->
     <uses-feature android:name="android.hardware.wifi.direct" android:required="false" />
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
 
     <application
         android:name=".SOSBlueApplication"
@@ -64,6 +67,16 @@
 
         <activity
             android:name=".MainActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".news.NewsFeedActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".settings.SettingsActivity"
             android:exported="false" />
 
         <!-- Wi-Fi Direct P2P broadcast receiver (self-registered by WifiDirectManager) -->

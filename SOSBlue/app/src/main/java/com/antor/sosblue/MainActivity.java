@@ -2,11 +2,12 @@ package com.antor.sosblue;
 
 import android.content.Intent;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.RadioGroup;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
@@ -19,6 +20,9 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.antor.f2p.engine.api.EngineConfig;
 import com.antor.sosblue.bridge.F2PBridge;
 import com.antor.sosblue.bridge.TransportMode;
+import com.antor.sosblue.inbox.ConversationAdapter;
+import com.antor.sosblue.inbox.ConversationModel;
+import com.antor.sosblue.inbox.ConversationRegistry;
 
 import com.antor.sosblue.util.ToastUtils;
 import com.google.android.material.snackbar.Snackbar;
@@ -32,9 +36,8 @@ public class MainActivity extends AppCompatActivity {
     private F2PBridge bridge;
     private RadioGroup transportRadioGroup;
     private TextView textStatus;
-    private ChatAdapter chatAdapter;
+    private ConversationAdapter conversationAdapter;
     private View loadingContainer;
-    private View sendButton;
 
     // Peer discovery
     private View peerPanel;
@@ -44,6 +47,8 @@ public class MainActivity extends AppCompatActivity {
     private PeerDiscoveryAdapter peerAdapter;
     private boolean peerPanelVisible;
     private boolean engineReady;
+
+    private RecyclerView conversationRecyclerView;
 
     /** Cache of real discovered peers (nodeId → PeerDevice). */
     private final ConcurrentHashMap<String, PeerDevice> discoveredPeers = new ConcurrentHashMap<>();
@@ -85,9 +90,11 @@ public class MainActivity extends AppCompatActivity {
                 PeerDevice peer = new PeerDevice(id, displayName, 3, true,
                         ipAddress, port);
                 discoveredPeers.put(id, peer);
-                // Store phone number separately for E2E encryption key derivation
                 if (phone != null) {
                     peerPhoneNumbers.put(id, phone);
+                    // Also register display name in notification cache
+                    com.antor.sosblue.notification.NotificationHelper
+                            .registerDisplayName(phone, displayName);
                 }
                 runOnUiThread(() -> refreshPeerList());
             }
@@ -104,16 +111,25 @@ public class MainActivity extends AppCompatActivity {
         textStatus = findViewById(R.id.textStatus);
         transportRadioGroup = findViewById(R.id.transportRadioGroup);
         loadingContainer = findViewById(R.id.loadingContainer);
-        sendButton = findViewById(R.id.sendButton);
 
         // ---------------------------------------------------------------
-        //  Chat RecyclerView (in-memory adapter)
+        //  Conversation RecyclerView (inbox)
         // ---------------------------------------------------------------
 
-        RecyclerView chatList = findViewById(R.id.chatRecyclerView);
-        chatAdapter = new ChatAdapter();
-        chatList.setLayoutManager(new LinearLayoutManager(this));
-        chatList.setAdapter(chatAdapter);
+        conversationRecyclerView = findViewById(R.id.chatRecyclerView);
+        conversationAdapter = new ConversationAdapter(conversation -> {
+            // Open ChatActivity with the selected conversation's recipient
+            Intent intent = new Intent(MainActivity.this, ChatActivity.class);
+            intent.putExtra(ChatActivity.EXTRA_RECIPIENT_PHONE,
+                    conversation.getConversationId());
+            intent.putExtra(ChatActivity.EXTRA_RECIPIENT_NAME,
+                    conversation.getDisplayName());
+            // Mark as read
+            ConversationRegistry.markRead(conversation.getConversationId());
+            startActivity(intent);
+        });
+        conversationRecyclerView.setLayoutManager(new LinearLayoutManager(this));
+        conversationRecyclerView.setAdapter(conversationAdapter);
 
         // Restore persisted preference
         TransportMode savedMode = TransportMode.load(this);
@@ -130,25 +146,119 @@ public class MainActivity extends AppCompatActivity {
             onTransportModeChanged(mode);
         });
 
-        // Initial status display (engine not ready yet — skip peer panel)
+        // Initial status display
         onTransportModeChanged(
                 radioIdToTransportMode(transportRadioGroup.getCheckedRadioButtonId()));
 
         // ---------------------------------------------------------------
-        //  Top action bar — preserve touch events
+        //  Hide previously used chat input elements (inbox has no composer)
         // ---------------------------------------------------------------
 
-        findViewById(R.id.searchIcon).setOnClickListener(v ->
-                ToastUtils.showShort(this, "Search"));
-        findViewById(R.id.discoverIcon).setOnClickListener(v ->
-                ToastUtils.showShort(this, "Discover"));
-        findViewById(R.id.threeDotIcon).setOnClickListener(v ->
-                ToastUtils.showShort(this, "Menu"));
-        findViewById(R.id.switchInputImage).setOnClickListener(v ->
-                ToastUtils.showShort(this, "Attach file"));
+        View inputContainer = findViewById(R.id.inputContainer);
+        if (inputContainer != null) inputContainer.setVisibility(View.GONE);
+        View replyPreview = findViewById(R.id.replyPreviewContainer);
+        if (replyPreview != null) replyPreview.setVisibility(View.GONE);
 
         // ---------------------------------------------------------------
-        //  Peer discovery panel — shows real discovered peers from heartbeats
+        //  Top action bar
+        // ---------------------------------------------------------------
+
+        // Search icon → Toggle search bar visibility
+        findViewById(R.id.searchIcon).setOnClickListener(v -> {
+            View searchOption = findViewById(R.id.searchOption);
+            if (searchOption != null) {
+                boolean visible = searchOption.getVisibility() == View.VISIBLE;
+                searchOption.setVisibility(visible ? View.GONE : View.VISIBLE);
+                if (!visible) {
+                    EditText searchField = findViewById(R.id.inputSearch);
+                    if (searchField != null) searchField.requestFocus();
+                }
+            }
+        });
+
+        findViewById(R.id.closeSearchOptionIcon).setOnClickListener(v -> {
+            View searchOption = findViewById(R.id.searchOption);
+            if (searchOption != null) searchOption.setVisibility(View.GONE);
+        });
+
+        // Broadcast (RSS/feed) icon → Open NewsFeedActivity
+        findViewById(R.id.discoverIcon).setOnClickListener(v -> {
+            Intent newsIntent = new Intent(MainActivity.this,
+                    com.antor.sosblue.news.NewsFeedActivity.class);
+            startActivity(newsIntent);
+        });
+
+        // Overflow menu (3 dots)
+        findViewById(R.id.threeDotIcon).setOnClickListener(v -> {
+            android.widget.PopupMenu popup = new android.widget.PopupMenu(MainActivity.this, v);
+            popup.getMenuInflater().inflate(R.menu.top_app_bar_menu, popup.getMenu());
+
+            // Mark the current transport mode as checked
+            TransportMode currentMode = TransportMode.load(MainActivity.this);
+            switch (currentMode) {
+                case F2P_SERVERLESS:
+                    popup.getMenu().findItem(R.id.menu_transport_f2p).setChecked(true);
+                    break;
+                case SMS_FALLBACK:
+                    popup.getMenu().findItem(R.id.menu_transport_sms).setChecked(true);
+                    break;
+                default:
+                    popup.getMenu().findItem(R.id.menu_transport_mesh).setChecked(true);
+                    break;
+            }
+
+            popup.setOnMenuItemClickListener(item -> {
+                int id = item.getItemId();
+                if (id == R.id.menu_chats) {
+                    startActivity(new Intent(MainActivity.this, ChatActivity.class));
+                    finish();
+                    return true;
+                } else if (id == R.id.menu_news_feed) {
+                    startActivity(new Intent(MainActivity.this,
+                            com.antor.sosblue.news.NewsFeedActivity.class));
+                    finish();
+                    return true;
+                } else if (id == R.id.menu_transport_mesh) {
+                    TransportMode.SOSBLUE_MESH.save(MainActivity.this);
+                    transportRadioGroup.check(R.id.rb_sosblue_mesh);
+                    onTransportModeChanged(TransportMode.SOSBLUE_MESH);
+                    ToastUtils.showShort(MainActivity.this,
+                            "Switched to " + TransportMode.SOSBLUE_MESH.getLabel());
+                    return true;
+                } else if (id == R.id.menu_transport_f2p) {
+                    TransportMode.F2P_SERVERLESS.save(MainActivity.this);
+                    transportRadioGroup.check(R.id.rb_f2p_serverless);
+                    onTransportModeChanged(TransportMode.F2P_SERVERLESS);
+                    ToastUtils.showShort(MainActivity.this,
+                            "Switched to " + TransportMode.F2P_SERVERLESS.getLabel());
+                    return true;
+                } else if (id == R.id.menu_transport_sms) {
+                    if (!TransportMode.SMS_FALLBACK.isAvailable(MainActivity.this)) {
+                        ToastUtils.showShort(MainActivity.this,
+                                R.string.transport_sms_unavailable);
+                        return true;
+                    }
+                    TransportMode.SMS_FALLBACK.save(MainActivity.this);
+                    transportRadioGroup.check(R.id.rb_sms_fallback);
+                    onTransportModeChanged(TransportMode.SMS_FALLBACK);
+                    ToastUtils.showShort(MainActivity.this,
+                            "Switched to " + TransportMode.SMS_FALLBACK.getLabel());
+                    return true;
+                } else if (id == R.id.menu_settings) {
+                    startActivity(new Intent(MainActivity.this,
+                            com.antor.sosblue.settings.SettingsActivity.class));
+                    return true;
+                } else if (id == R.id.menu_about) {
+                    showAboutDialog();
+                    return true;
+                }
+                return false;
+            });
+            popup.show();
+        });
+
+        // ---------------------------------------------------------------
+        //  Peer discovery panel
         // ---------------------------------------------------------------
 
         peerPanel = findViewById(R.id.peerDiscoveryPanel);
@@ -158,15 +268,13 @@ public class MainActivity extends AppCompatActivity {
         Button peerRefreshButton = findViewById(R.id.peerRefreshButton);
 
         peerAdapter = new PeerDiscoveryAdapter(new ArrayList<>(), peer -> {
-            // Launch ChatActivity with the selected peer's phone number
-            // (for E2E encryption) and display name (for the chat title).
+            // Launch ChatActivity with the selected peer
             Intent intent = new Intent(MainActivity.this, ChatActivity.class);
             String peerId = peer.getId();
             String peerPhone = peerPhoneNumbers.get(peerId);
             if (peerPhone != null) {
                 intent.putExtra(ChatActivity.EXTRA_RECIPIENT_PHONE, peerPhone);
             } else {
-                // Fallback: use the peer name (may not work for E2E)
                 intent.putExtra(ChatActivity.EXTRA_RECIPIENT_PHONE, peer.getName());
             }
             intent.putExtra(ChatActivity.EXTRA_RECIPIENT_NAME, peer.getName());
@@ -187,27 +295,10 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        // Refresh button re-scans peers
         peerRefreshButton.setOnClickListener(v -> refreshPeerList());
 
         // ---------------------------------------------------------------
-        //  Send button
-        // ---------------------------------------------------------------
-
-        sendButton.setOnClickListener(v -> sendCurrentMessage());
-
-        // Handle IME action on the message input
-        android.widget.EditText inputMessage = findViewById(R.id.inputMessage);
-        inputMessage.setOnEditorActionListener((v, actionId, event) -> {
-            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND) {
-                sendCurrentMessage();
-                return true;
-            }
-            return false;
-        });
-
-        // ---------------------------------------------------------------
-        //  Start engine on a background thread — NEVER block the UI thread
+        //  Start engine
         // ---------------------------------------------------------------
 
         showLoading(true);
@@ -233,11 +324,55 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        // Refresh the conversation list every time we return to MainActivity
+        refreshConversationList();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        // Activity going to background — resources are released in onDestroy
+    }
+
+    @Override
     protected void onDestroy() {
-        if (bridge != null) {
-            bridge.stopEngine();
+        try {
+            if (bridge != null) {
+                bridge.stopEngine();
+                bridge = null;
+            }
+        } catch (Exception e) {
+            Log.w("MainActivity", "Error stopping engine in onDestroy", e);
         }
         super.onDestroy();
+    }
+
+    // ---------------------------------------------------------------
+    //  Conversation list
+    // ---------------------------------------------------------------
+
+    private void refreshConversationList() {
+        List<ConversationModel> conversations = ConversationRegistry.getAll();
+        conversationAdapter.submitList(conversations);
+
+        // Update title with conversation count
+        int count = conversations.size();
+        TextView titleView = findViewById(R.id.appTitle);
+        if (titleView != null) {
+            titleView.setText(count > 0 ? "Chats (" + count + ")" : "Chats");
+        }
+
+        // Show/hide empty state (only after engine is ready)
+        if (textStatus != null && engineReady) {
+            if (count == 0) {
+                textStatus.setText("No conversations yet.\nTap a peer to start chatting.");
+                textStatus.setVisibility(View.VISIBLE);
+            } else {
+                textStatus.setVisibility(View.GONE);
+            }
+        }
     }
 
     // ---------------------------------------------------------------
@@ -247,6 +382,8 @@ public class MainActivity extends AppCompatActivity {
     private static TransportMode radioIdToTransportMode(int radioId) {
         if (radioId == R.id.rb_f2p_serverless) {
             return TransportMode.F2P_SERVERLESS;
+        } else if (radioId == R.id.rb_sms_fallback) {
+            return TransportMode.SMS_FALLBACK;
         }
         return TransportMode.SOSBLUE_MESH;
     }
@@ -254,30 +391,14 @@ public class MainActivity extends AppCompatActivity {
     private void showLoading(boolean show) {
         if (textStatus != null) {
             textStatus.setVisibility(show ? View.VISIBLE : View.GONE);
-        }
-    }
-
-    private void showSendProgress(boolean show) {
-        if (loadingContainer != null) {
-            loadingContainer.setVisibility(show ? View.VISIBLE : View.GONE);
-        }
-        if (sendButton != null) {
-            sendButton.setVisibility(show ? View.INVISIBLE : View.VISIBLE);
-        }
-    }
-
-    private void scrollChatToBottom() {
-        RecyclerView chatList = findViewById(R.id.chatRecyclerView);
-        if (chatList != null && chatAdapter != null) {
-            int count = chatAdapter.getItemCount();
-            if (count > 0) {
-                chatList.smoothScrollToPosition(count - 1);
+            if (show) {
+                textStatus.setText("Initialising engine...");
             }
         }
     }
 
     // ---------------------------------------------------------------
-    //  Peer discovery panel — real discovered peers from UDP heartbeats
+    //  Peer discovery panel
     // ---------------------------------------------------------------
 
     private void showPeerPanel(boolean show) {
@@ -289,10 +410,8 @@ public class MainActivity extends AppCompatActivity {
 
     private void refreshPeerList() {
         List<PeerDevice> devices = new ArrayList<>(discoveredPeers.values());
-
         peerAdapter.updatePeers(devices);
 
-        // Update count label + empty hint
         int activeCount = engineReady ? bridge.getActiveNodeCount() : 0;
         peerCountLabel.setText(devices.size() + " peer(s) discovered · "
                 + activeCount + " online");
@@ -304,17 +423,18 @@ public class MainActivity extends AppCompatActivity {
     // ---------------------------------------------------------------
 
     private void onTransportModeChanged(TransportMode mode) {
+        if (isFinishing() || isDestroyed()) return;
+
         if (mode == TransportMode.SOSBLUE_MESH) {
-            // Show peer discovery panel when Mesh is selected
-            if (engineReady) {
+            if (engineReady && bridge != null) {
                 refreshPeerList();
                 showPeerPanel(true);
             }
         } else {
             showPeerPanel(false);
-
-            if (!bridge.isRouting()) {
+            if (bridge != null && !bridge.isRouting()) {
                 View root = findViewById(R.id.main);
+                if (root == null) return;
                 Snackbar sb = Snackbar.make(root, "F2P engine not connected",
                         Snackbar.LENGTH_LONG);
                 sb.setAction("Switch to Mesh", v -> {
@@ -327,51 +447,20 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // ---------------------------------------------------------------
-    //  Send message
+    //  Dialogs
     // ---------------------------------------------------------------
 
-    private void sendCurrentMessage() {
-        String messageText = String.valueOf(
-                ((android.widget.EditText) findViewById(R.id.inputMessage)).getText()
-        ).trim();
-        if (messageText.isEmpty()) return;
-
-        ((android.widget.EditText) findViewById(R.id.inputMessage)).setText("");
-
-        MessageModel outbound = new MessageModel(messageText, true /* sent */);
-        java.util.List<MessageModel> updated = new java.util.ArrayList<>(
-                chatAdapter.getCurrentList());
-        updated.add(outbound);
-
-        final RecyclerView chatList = findViewById(R.id.chatRecyclerView);
-        final RecyclerView.AdapterDataObserver scrollObserver =
-                new RecyclerView.AdapterDataObserver() {
-                    @Override
-                    public void onItemRangeInserted(int positionStart, int itemCount) {
-                        chatList.smoothScrollToPosition(chatAdapter.getItemCount() - 1);
-                        chatAdapter.unregisterAdapterDataObserver(this);
-                    }
-                };
-        chatAdapter.registerAdapterDataObserver(scrollObserver);
-        chatAdapter.submitList(updated);
-
-        showSendProgress(true);
-
-        String recipientId = bridge.getLocalNodeId();
-        TransportMode mode = radioIdToTransportMode(
-                transportRadioGroup.getCheckedRadioButtonId());
-
-        bridge.sendMessageAsync(messageText, recipientId, mode,
-                new F2PBridge.OnMessageSendListener() {
-                    @Override
-                    public void onSent() {
-                        showSendProgress(false);
-                    }
-
-                    @Override
-                    public void onSendFailed(String reason) {
-                        showSendProgress(false);
-                    }
-                });
+    private void showAboutDialog() {
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("About SOSBlue")
+                .setMessage("SOSBlue — Secure Offline-Safe Blue Messenger\n\n"
+                        + "Version 1.0\n\n"
+                        + "A peer-to-peer messaging app with 3-tier transport:\n"
+                        + "\u2022 SOSBlue Mesh (BLE/WiFi-Direct P2P)\n"
+                        + "\u2022 F2P Serverless (WanderingFibreEngine)\n"
+                        + "\u2022 SMS Relay (carrier fallback)\n\n"
+                        + "All messages are end-to-end encrypted.")
+                .setPositiveButton("OK", null)
+                .show();
     }
 }

@@ -312,8 +312,8 @@ public class NetworkConnectivityManager {
             }
             // Prefer wlan interfaces
             Collections.sort(sorted, (a, b) -> {
-                boolean aWifi = a.getName() != null && a.getName().toLowerCase().contains("wlan");
-                boolean bWifi = b.getName() != null && b.getName().toLowerCase().contains("wlan");
+            boolean aWifi = a.getName() != null && a.getName().toLowerCase(java.util.Locale.ROOT).contains("wlan");
+            boolean bWifi = b.getName() != null && b.getName().toLowerCase(java.util.Locale.ROOT).contains("wlan");
                 return Boolean.compare(bWifi, aWifi);
             });
 

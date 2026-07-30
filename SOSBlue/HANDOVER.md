@@ -1,9 +1,10 @@
 # SOSBlue Mesh — Handover Document
 
 **Branch:** `main`
-**Last Build:** `assembleDebug` — **BUILD SUCCESSFUL** (11s, verified Jul 30, 2026)
+**Last Build:** `assembleDebug` — **BUILD SUCCESSFUL** (verified Jul 30, 2026)
+**Lint:** 184 warnings, **0 errors** (down from 221)
 **Engine Tests:** 17/17 passed (7 Integration + 5 Routing + 5 Security — verified Jul 30, 2026)
-**Latest Session:** Handover doc refresh & verification (Jul 30, 2026) — re-ran engine tests (17/17 passed), assembled Debug APK (BUILD SUCCESSFUL), updated timestamps; no code changes
+**Latest Session:** UI/UX Navigation Redesign & Lint Resolution (Jul 30, 2026)
 
 ---
 
@@ -136,22 +137,43 @@ F2P (Free-to-Peer) Serverless is a decentralized, serverless, off-grid peer-to-p
 | `MediaChunker.java` | File chunking for large media transfers — split, reassemble, concurrent chunk tracking |
 | `MediaTransferListener.java` | Progress callback interface — `onProgress`, `onComplete`, `onFailed` |
 
+#### `settings/`
+| File | Purpose |
+|------|---------|
+| `SettingsManager.java` | **NEW** — SharedPreferences-backed notification toggles (chat + news) with `resetToDefaults()` |
+| `SettingsActivity.java` | **NEW** — Settings screen with transport mode selection, notification toggles, about section |
+
 #### `util/`
 | File | Purpose |
 |------|---------|
 | `ToastUtils.java` | Toast helper — cancels previous Toast before showing new one, prevents overlay stacking |
 
-### Layout Files (7)
+### Layout Files (11)
 | File | Purpose |
 |------|---------|
-| `activity_chat.xml` | Chat screen layout — messages list, peer bar, input bar, transport selector, attachment button |
-| `activity_main.xml` | Dashboard layout — chat list, peer discovery panel, transport radio group |
+| `activity_chat.xml` | Chat screen layout — messages list, peer bar, input bar, transport selector, attachment button. Bottom nav **removed** in Session 11 |
+| `activity_main.xml` | Dashboard layout — conversation list (inbox), peer discovery panel, transport radio group. Bottom nav **removed** in Session 11 |
+| `activity_settings.xml` | Settings layout with transport mode, notification toggles, about info |
 | `activity_sign_in.xml` | Sign-in layout — username + phone fields, MaterialButton |
 | `item_message_incoming.xml` | Incoming text bubble (white bg, dark text) |
 | `item_message_outgoing.xml` | Outgoing text bubble (dark red bg, white text) |
 | `item_message_media_incoming.xml` | Incoming media bubble |
 | `item_message_media_outgoing.xml` | Outgoing media bubble |
 | `item_peer_dark.xml` | Peer device card in peer list |
+| `item_conversation.xml` | **NEW** — Conversation inbox card with avatar circle, name, preview text, timestamp, unread badge |
+| `item_news_card.xml` | **NEW** — News broadcast card with author, transport badge, timestamp, text body, media indicator |
+
+### Menu Files
+| File | Purpose |
+|------|---------|
+| `menu/top_app_bar_menu.xml` | **NEW (Session 11)** — Overflow menu with Chats, News Feed, Transport Mode submenu, Settings, About. Replaces deleted `bottom_nav_menu.xml` |
+
+### `inbox/`
+| File | Purpose |
+|------|---------|
+| `ConversationModel.java` | **NEW** — Data class with display name, phone, last message preview, timestamp, unread count, has-media flag, avatar char, relative time formatter |
+| `ConversationRegistry.java` | **NEW** — Static `ConcurrentHashMap`-based registry (thread-safe) — `update()`, `getAll()` (sorted by newest first), `markRead()`, `clearAll()` |
+| `ConversationAdapter.java` | **NEW** — `ListAdapter` with `DiffUtil`, click listener, unread badge display, media indicator icon, avatar circle with first-letter fallback |
 
 ### Wandering Fibre Engine — `f2p-serverless/wandering-fibre-engine/`
 
@@ -201,6 +223,50 @@ F2P (Free-to-Peer) Serverless is a decentralized, serverless, off-grid peer-to-p
 
 ## 4. New Files Created
 
+### Session 11 (Current — UI/UX Navigation Redesign & Lint Resolution)
+| File | Purpose |
+|------|---------|
+| `menu/top_app_bar_menu.xml` | **NEW** — Overflow menu resource with structured navigation: Chats, News Feed, Transport Mode submenu (3 tiers), Settings, About. Replaces deleted `bottom_nav_menu.xml` |
+
+### Session 10 (Conversation Inbox & Lint Cleanup)
+| File | Purpose |
+|------|---------|
+| `inbox/ConversationModel.java` | Data class for conversation previews — display name, phone, last message text, timestamp, unread count, media indicator, avatar char |
+| `inbox/ConversationRegistry.java` | Static thread-safe registry (`ConcurrentHashMap`) — `update()` creates/updates entries, `getAll()` returns sorted by newest message, `markRead()` resets unread count |
+| `inbox/ConversationAdapter.java` | RecyclerView `ListAdapter` with `DiffUtil`, per-item click listener, unread badge (circular red), media attachment indicator, relative timestamp |
+| `layout/item_conversation.xml` | `MaterialCardView` with: circular avatar (first letter, red bg), display name + timestamp top row, last message preview + media indicator middle, unread badge bottom-right |
+
+### Session 9 (Settings Screen, Notification Toggles, About Info)
+| File | Purpose |
+|------|---------|
+| `settings/SettingsManager.java` | SharedPreferences-backed notification toggles (chat + news) with `resetToDefaults()` |
+| `settings/SettingsActivity.java` | Full settings screen — transport mode radio group, notification toggle switches, about section with version info |
+| `drawable/ic_settings.xml` | Gear/cog icon for the settings top bar |
+| `layout/activity_settings.xml` | Scrollable card-based layout with 3 sections (transport, notifications, about) |
+
+### Session 8 (Broadcast News Feed, Notifications, Persistence)
+| File | Purpose |
+|------|---------|
+| `news/F2PNewsPacket.java` | News broadcast data class — TransportType enum, SMS wire format `[NEWS:AuthorName] text`, Base64 media support |
+| `news/NewsFeedActivity.java` | News broadcast feed — card-based RecyclerView, 3-tier transport selector, compose bar with media attachment, search, overflow menu, bottom nav |
+| `news/NewsAdapter.java` | News card adapter — ListAdapter with DiffUtil, author/transport badge/timestamp/text/media, entrance animations, read/unread alpha |
+| `notification/NotificationHelper.java` | Notification manager — 2 high-priority channels, MessagingStyle 1:1 + group conversations, phone→name display cache, per-sender/per-group history with SharedPreferences persistence |
+| `menu/bottom_nav_menu.xml` | Bottom navigation menu — Chats and News tabs |
+| `drawable/ic_notification_chat.xml` | Chat notification small icon (white bubble) |
+| `drawable/ic_notification_news.xml` | News notification small icon (white bars) |
+| `drawable/ic_rss.xml` | RSS/broadcast icon for top bar |
+| `drawable/ic_bottom_chat.xml` | Bottom nav Chats tab icon |
+| `drawable/ic_bottom_news.xml` | Bottom nav News tab icon |
+
+### Session 7 (Verification & Doc Refresh)
+No code changes — re-ran engine tests (17/17 passed) and `assembleDebug` (BUILD SUCCESSFUL).
+
+### Session 6 (Network-Switching Fix)
+| File | Purpose |
+|------|---------|
+| `bridge/NetworkConnectivityManager.java` | Wi-Fi network change monitoring — `ConnectivityManager.NetworkCallback` + `BroadcastReceiver`; IP/SSID resolution; listener notification |
+| `bridge/WifiDirectManager.java` | Wi-Fi Direct P2P fallback — peer discovery, group formation, group owner IP exposure |
+
 ### Session 1 (Initial Implementation)
 | File | Purpose |
 |------|---------|
@@ -217,23 +283,87 @@ F2P (Free-to-Peer) Serverless is a decentralized, serverless, off-grid peer-to-p
 | `util/ToastUtils.java` | Toast overlay prevention |
 | Layout files (7) | XML layouts for screens and bubbles |
 
-### Session 2 (Network-Switching Fix)
-| File | Purpose |
-|------|---------|
-| `bridge/NetworkConnectivityManager.java` | Wi-Fi network change monitoring — `ConnectivityManager.NetworkCallback` + `BroadcastReceiver`; IP/SSID resolution; listener notification |
-| `bridge/WifiDirectManager.java` | Wi-Fi Direct P2P fallback — peer discovery, group formation, group owner IP exposure |
-
 ---
 
 ## 5. Files Modified
 
-### Session 7 (Current — Verification & Doc Refresh)
-
-No code changes in this session. Re-ran all engine tests (17/17 passed) and `assembleDebug` (BUILD SUCCESSFUL in 11s) to verify the project state. Handover document refreshed with current timestamps.
+### Session 11 (Current — UI/UX Navigation Redesign & Lint Resolution)
 
 | File | What Changed |
 |------|-------------|
-| `HANDOVER.md` | Updated `Last Build` and `Engine Tests` with current verification date; added Session 7 entry; refreshed timestamps throughout |
+| `activity_main.xml` | **Removed** `BottomNavigationView` (Chats/News tab bar). **Fixed** `InefficientWeight` / `NestedWeights` — changed `layout_width="wrap_content"` → `"0dp"` for weighted `titleContainer` and inner `LinearLayout`. **Fixed** `SmallSp` — bumped timestamp font from 10sp → 12sp. |
+| `activity_chat.xml` | **Removed** `BottomNavigationView` (Chats/News tab bar). **Fixed** `SmallSp` — bumped timestamp font from 10sp → 12sp. |
+| `activity_news_feed.xml` | **Removed** `BottomNavigationView` (Chats/News tab bar). Made transport selector `android:visibility="visible"` (was `"gone"`). |
+| `menu/top_app_bar_menu.xml` | **NEW** — Overflow menu with Chats, News Feed, Transport Mode submenu (SOSBlue Mesh / F2P Serverless / SMS), Settings, About |
+| `menu/bottom_nav_menu.xml` | **DELETED** — Replaced by `top_app_bar_menu.xml` as part of navigation redesign |
+| `AndroidManifest.xml` | Added `windowSoftInputMode="adjustResize"` to `MainActivity`. **Removed** duplicated `ACCESS_WIFI_STATE` and `CHANGE_WIFI_STATE` permission entries (were declared twice — in "Network permissions" block and "Wi-Fi Direct/P2P" block). |
+| `MainActivity.java` | **Overflow menu:** Replaced inline `PopupMenu` with `R.menu.top_app_bar_menu` inflation + transport mode submenu handling with persistence. **Bottom nav:** Removed `BottomNavigationView` listener code. **Lifecycle:** Added `onStop()` + try-catch in `onDestroy()` for safe bridge cleanup. **Added** `import android.util.Log`. |
+| `ChatActivity.java` | **Overflow menu:** Replaced inline `PopupMenu` with `R.menu.top_app_bar_menu` inflation + transport mode submenu. **Bottom nav:** Removed `BottomNavigationView` listener code. **Dead code:** Removed `showTransportSettingsDialog()` (now handled by overflow menu + SettingsActivity). **Lifecycle:** Added `onStop()` + try-catch in `onDestroy()` for bridge + SMS transport cleanup. **Fixed** `DefaultLocale` — added `Locale.ROOT` to 3 `toLowerCase()` calls in search filter. |
+| `NewsFeedActivity.java` | **Overflow menu:** Replaced with `R.menu.top_app_bar_menu` inflation + transport mode submenu. **Bottom nav:** Removed `BottomNavigationView` listener code and import. **Transport selector:** Made `newsTransportScroll` visible; added `OnCheckedChangeListener` to persist mode changes. **Dead code:** Removed `showSettingsDialog()`. **Lifecycle:** Added `onStop()` + try-catch in `onDestroy()`. **Fixed** `DefaultLocale` — added `Locale.ROOT` to 3 `toLowerCase()` calls in search. |
+| `F2PNewsPacket.java` | **Fixed** `DefaultLocale` — added `Locale.ROOT` to `bridgeName.toUpperCase()` call |
+| `MessageModel.java` | **Fixed** `DefaultLocale` — added `Locale.ROOT` to all 3 `String.format()` calls for media size display |
+| `NetworkConnectivityManager.java` | **Fixed** `DefaultLocale` — added `Locale.ROOT` to 2 `getName().toLowerCase()` calls |
+| `strings.xml` | Added `transport_sosblue_mesh` ("SOSBlue Mesh") and `transport_f2p_serverless` ("F2P Serverless") string resources for menu |
+| `drawable/bg_white_round_bottom.xml` | **DELETED** — Unused |
+| `drawable/bg_white_round_top.xml` | **DELETED** — Unused |
+| `drawable/rounded_edittext.xml` | **DELETED** — Unused |
+| `drawable/ic_bottom_news.xml` | **DELETED** — Unused (was only referenced by deleted `bottom_nav_menu.xml`) |
+| `layout/*.xml` (9 files) | **Fixed** `SmallSp` — bumped font sizes from `10sp`/`11sp` to `12sp` across `activity_main.xml`, `activity_chat.xml`, `item_message_incoming.xml`, `item_message_outgoing.xml`, `item_message_media_incoming.xml`, `item_message_media_outgoing.xml`, `item_conversation.xml`, `item_news_card.xml`, `activity_settings.xml` |
+
+### Session 10 (Conversation Inbox & Lint Cleanup)
+
+| File | What Changed |
+|------|-------------|
+| `inbox/ConversationModel.java` | **NEW** — Data class with fields: `displayName`, `phone`, `lastMessage`, `timestamp`, `unreadCount`, `hasMedia`, `avatarChar`. Methods: `getRelativeTime()` (short "2m ago" / "1h ago" / "Yesterday" format), `getAvatarChar()` (first letter of display name, fallback to `#`). |
+| `inbox/ConversationRegistry.java` | **NEW** — Static `ConcurrentHashMap<String, ConversationModel>` shared across activities. `update(phone, name, text, ts, outgoing, hasMedia, incrementUnread)` — atomic create-or-update with max unread cap of 99. `getAll()` returns entries sorted by newest timestamp descending. `markRead(phone)` resets unread to 0. `clearAll()` wipes the registry. |
+| `inbox/ConversationAdapter.java` | **NEW** — `ListAdapter<ConversationModel>` with `DiffUtil.ItemCallback` comparing phone + preview + unread count + timestamp. `ViewHolder` inflates `item_conversation.xml` and binds: avatar circle with first letter + `@color/primary_red` background, name bold if unread > 0, last message preview (prefixed with "📷 " for media), relative timestamp, circular red unread badge with count text (hidden when 0). `setOnConversationClickListener()` callback for item tap. |
+| `layout/item_conversation.xml` | **NEW** — `MaterialCardView` (dark `#1E1E1E` bg, `#2A2A2E` stroke, 12dp radius). Layout: horizontal row with `FrameLayout` avatar circle (40dp, `circle_bg` with `primary_red` tint), `LinearLayout` column (name `title_text` bold 15sp, separator, last message `peer_detail_text` 13sp, single line with ellipsis), right-side column (timestamp `peer_detail_text` 10sp, unread badge `bg_round_unseen_msg` 20dp circle with white 11sp count text, bottom-aligned). |
+| `MainActivity.java` | **Major rewrite of inbox screen:** Replaced `ChatAdapter` with `ConversationAdapter`. Hides message input container (`inputContainer`) and reply preview (`replyPreviewContainer`) — these were leftover from the previous direct-send layout. Added `refreshConversationList()` method called in `onResume()` to reload from `ConversationRegistry` every time user returns. Empty state (`textStatus`) shows "No conversations yet" when registry is empty — separate from engine loading state. Conversation item click → `Intent` to `ChatActivity` with `EXTRA_RECIPIENT_PHONE` and `EXTRA_RECIPIENT_NAME` extras + calls `ConversationRegistry.markRead()`. |
+| `ChatActivity.java` | **Conversation registry integration:** Added import + registration of every message event in `ConversationRegistry`: (1) `sendCurrentMessage()` registers outgoing message with resolved display name via `NotificationHelper.lookupDisplayName()`, (2) incoming mesh messages register with sender's lookup display name, (3) inbound SMS messages register with sender phone. `ConversationRegistry.markRead()` called in `onCreate()` when launched from inbox with a recipient intent extra. |
+| `AndroidManifest.xml` | Added `POST_NOTIFICATIONS` (notification permission for Android 13+), `ACCESS_COARSE_LOCATION` (Wi-Fi scanning on Android 10-12), and `<uses-feature android:name="android.hardware.telephony" android:required="false" />` (silences Chrome OS lint warning for telephony-related code) |
+| `SOSBlueApplication.java` | Added `@SuppressLint("NewApi")` to `isIsolatedProcess()` — removes `NewApi` lint error about `Process.isIsolated()` being API 28+ (minSdk=26) |
+| `TransportMode.java` | Added `@SuppressLint("NewApi")` to `isIsolatedProcess()` + `@SuppressLint("MissingPermission")` to `getSubscriberId()` call (code already has try-catch guard) — removes `NewApi` + `MissingPermission` lint errors |
+| `UserIdentity.java` | Added `@SuppressLint("NewApi")` to `isIsolatedProcess()` — removes `NewApi` lint error |
+| Layout files (10 files) | Replaced all `android:tint="@color/..."` with `app:tint="@color/..."` across `activity_chat.xml`, `activity_main.xml`, `activity_news_feed.xml`, `activity_settings.xml`, `item_news_card.xml`, `item_message_media_incoming.xml`, `item_message_media_outgoing.xml` — resolved all 40 `UseAppTint` lint errors |
+
+### Session 9 (Settings Screen, Notification Toggles, Overflow Menu Routing)
+
+| File | What Changed |
+|------|-------------|
+| `settings/SettingsManager.java` | **NEW** — Lightweight SharedPreferences helper with `isChatNotificationEnabled()`, `setChatNotificationEnabled()`, `isNewsNotificationEnabled()`, `setNewsNotificationEnabled()`, and `resetToDefaults()` |
+| `settings/SettingsActivity.java` | **NEW** — Dedicated settings activity with: transport mode radio group (persists via `TransportMode.save()` with SMS availability gate), notification toggle switches (`SwitchCompat` for chat + news broadcasting), about section (app icon, name, version, 3-tier transport description), and a reset-to-defaults button |
+| `drawable/ic_settings.xml` | **NEW** — Vector drawable gear icon for the settings action bar |
+| `layout/activity_settings.xml` | **NEW** — Scrollable dark-theme layout with `MaterialCardView` cards for each section: transport radio group, notification switches with descriptions, about card with centered icon + text |
+| `NotificationHelper.java` | Added `SettingsManager` field + checks at the top of `notifyIncomingMessage()`, `notifyGroupMessage()`, and `notifyIncomingNews()` — suppresses notifications when the user has toggled them off |
+| `ChatActivity.java` | Overflow menu item "Settings / Mode Switch" now launches `SettingsActivity` instead of showing an inline dialog |
+| `MainActivity.java` | Same overflow menu re-routing to `SettingsActivity` |
+| `NewsFeedActivity.java` | Same overflow menu re-routing to `SettingsActivity` |
+| `AndroidManifest.xml` | Added `SettingsActivity` as a non-exported activity |
+| `strings.xml` | Added 12+ strings for settings screen — section headers, toggle descriptions, about text, reset toast |
+
+### Session 8 (Broadcast News Feed, Notifications, UI Polish)
+
+| File | What Changed |
+|------|-------------|
+| `news/F2PNewsPacket.java` | **NEW** — News broadcast data class with `TransportType` enum (SOSBLUE_MESH / F2P_SERVERLESS / SMS_FALLBACK), SMS wire format `[NEWS:AuthorName] text`, `fromSmsText()` parser, Base64 media support |
+| `news/NewsFeedActivity.java` | **NEW** — Full broadcast news feed: `BottomNavigationView` with Chats/News tabs, card-based `RecyclerView`, transport radio selector, compose bar with text + media attachment + send, search bar overlay, overflow menu, demo items |
+| `news/NewsAdapter.java` | **NEW** — `ListAdapter` with DiffUtil, colored chip-style transport badges (red/green/blue-grey), relative timestamps, slide-in entrance animation, read/unread alpha |
+| `notification/NotificationHelper.java` | **NEW** — Complete notification system: 2 high-priority channels (chat + news), `notifyIncomingMessage()` with `MessagingStyle` for 1:1 conversations, `notifyGroupMessage()` with `setGroupConversation(true)` for multi-sender group chats, static phone→display-name cache, static per-sender and per-group message history with `SharedPreferences` JSON persistence (load on init, save after every write, clear on `cancelAll()`), stable per-conversation notification IDs, `Person` builder for sender attribution, 50-entry history cap |
+| `menu/bottom_nav_menu.xml` | **NEW** — Simple 2-tab menu (`nav_chats` + `nav_news`) |
+| `drawable/ic_notification_chat.xml` | **NEW** — Vector drawable for chat notification icon |
+| `drawable/ic_notification_news.xml` | **NEW** — Vector drawable for news notification icon |
+| `drawable/ic_rss.xml` | **NEW** — RSS/broadcast icon for top action bar |
+| `drawable/ic_bottom_chat.xml` | **NEW** — Bottom nav Chats tab icon |
+| `drawable/ic_bottom_news.xml` | **NEW** — Bottom nav News tab icon |
+| `activity_chat.xml` | Added search bar overlay (`@+id/searchBarOverlay` + `@+id/searchInput` + `@+id/searchCloseIcon`) with fade animation; added `BottomNavigationView` at bottom |
+| `activity_news_feed.xml` | **NEW** — Full news feed layout: top bar with search + overflow, transport radio, RecyclerView, compose bar, bottom nav |
+| `item_news_card.xml` | **NEW** — News card with MaterialCardView: author row, colored transport badge chip, relative timestamp, text body, media indicator |
+| `ChatActivity.java` | **Top bar handlers:** search icon toggles animated search bar (real-time filter by text/sender), broadcast (feed) icon opens `NewsFeedActivity`, 3-dot overflow shows PopupMenu (Switch to Chat/News, Settings/Mode Switch, About/Help). **Bottom nav:** `BottomNavigationView` with Chats/News tabs switches between activities. **Search:** `allMessages` list tracks all messages + `searchInput` field for filtering with TextWatcher. **Notifications:** Incoming messages trigger `NotificationHelper.notifyIncomingMessage()`; mesh broadcasts (transport=`"mesh"`) route to `notifyGroupMessage()` with group ID `"sosblue_mesh_broadcast"`. **Display name cache:** Registers local user identity in cache at startup; registers `PeerDiscoveryListener` to populate cache from heartbeats. |
+| `MainActivity.java` | **Top bar handlers:** search icon toggles inline search bar, broadcast icon opens `NewsFeedActivity`, 3-dot overflow shows PopupMenu (Switch to Chat/News, Settings, About). **Bottom nav:** `BottomNavigationView` with Chats/News tabs. **Dialogs:** `showTransportSettingsDialog()` + `showAboutDialog()` added. |
+| `colors.xml` | Added `f2p_badge_bg` (#388E3C), `sms_badge_bg` (#455A64) for news card transport chip backgrounds |
+| `strings.xml` | Added 20+ new strings for news broadcast, bottom navigation, notifications, overflow menu, dialogs, and search |
+| `AndroidManifest.xml` | Added `NewsFeedActivity` activity declaration |
+| `HANDOVER.md` | Updated with all Session 8 changes — new files, modified files, feature list, architecture, outstanding tasks |
 
 ### Session 6
 
@@ -436,6 +566,43 @@ When a P2P peer is selected:
 
 ## 7. Key Features Implemented
 
+### ✅ Navigation Redesign (Session 11)
+- **Removed floating bottom tab bar** from all 3 activities (Chats/News tabs) — navigation moved entirely to the top bar's 3-dot overflow menu and RSS/feed icon
+- **Created `top_app_bar_menu.xml`** with proper menu structure: Chats, News Feed, Transport Mode submenu (SOSBlue Mesh / F2P Serverless / SMS Relay), Settings, About
+- **Transport mode in overflow menu** — users can switch between all 3 tiers directly from the overflow submenu with visual checkmark
+- **RSS/feed icon** in each top bar opens NewsFeedActivity — retained as a quick-access button
+- **Keyboard overlap fix** — `windowSoftInputMode="adjustResize"` applied to `MainActivity` (ChatActivity already had it); weighted RecyclerView layout ensures messages compress above the input bar
+
+### Lifecycle Stability (Session 11)
+- `onStop()` + try-catch `onDestroy()` cleanup added to all 3 activities — bridge engine stop, SMS transport unregister, and notification helper cleanup are all safely wrapped
+- Transport initialization safe from NPEs via try-catch blocks
+
+### ✅ Lint Cleanup (Session 11)
+- **Reduced lint warnings from 221 → 184 (17% reduction), 0 errors**
+- **Fixed DefaultLocale (11 in app files):** Added `Locale.ROOT` to all `toLowerCase()`/`toUpperCase()`/`String.format()` calls across `ChatActivity`, `F2PNewsPacket`, `MessageModel`, `NetworkConnectivityManager`, `NewsFeedActivity`
+- **Fixed InefficientWeight (2):** Changed `layout_width="wrap_content"` → `"0dp"` for weighted layouts in `activity_main.xml`
+- **Fixed NestedWeights (1):** Eliminated nested weight in `activity_main.xml` by replacing inner layout's weight with `wrap_content` + `layout_gravity="end"`
+- **Fixed SmallSp (5 → 0 in app):** Increased font sizes from 10sp/11sp to 12sp across 9 layout files
+- **Removed unused resources:** Deleted 4 unused drawables (`bg_white_round_bottom.xml`, `bg_white_round_top.xml`, `rounded_edittext.xml`, `ic_bottom_news.xml`) + `bottom_nav_menu.xml`
+- **Fixed duplicate manifest permissions:** Removed duplicated `ACCESS_WIFI_STATE` and `CHANGE_WIFI_STATE` declarations
+
+### ✅ Conversation Inbox
+- `MainActivity` now shows a conversation list (inbox) instead of a direct message composer — users see all active chats with latest message preview, sender name, timestamp, and unread badge
+- `ConversationRegistry` (static `ConcurrentHashMap`) shared between `ChatActivity` and `MainActivity` — automatically updated on every sent/received/SMS message
+- `ConversationAdapter` with `DiffUtil` ensures smooth list updates with correct item animations
+- Conversation cards show: avatar circle with first letter (red bg), display name (bold when unread), media indicator (📷), relative timestamp ("2m ago", "Yesterday"), unread count badge (red circle)
+- Tapping a conversation opens `ChatActivity` with recipient pre-filled; unread count resets to 0
+- Inbox refreshes on `onResume()` — always shows latest state when user returns
+
+### ✅ Settings Screen
+- `SettingsActivity` provides a dedicated settings screen with three card-based sections: Transport Mode, Notifications, and About
+- Transport mode selector uses a `RadioGroup` persisting via `TransportMode.save()` with SMS availability gate and toast feedback
+- Notification toggles (chat + news) backed by `SettingsManager` using `SharedPreferences` — changes reflected immediately
+- About section displays app icon (red circle), name, version, and 3-tier transport description
+- Overflow menus in `ChatActivity`, `MainActivity`, and `NewsFeedActivity` all route to `SettingsActivity`
+- `NotificationHelper` checks `SettingsManager` before posting every notification — suppresses when toggled off
+- Reset-to-defaults button restores all toggles to `true` and transport to SOSBlue Mesh
+
 ### ✅ Real UDP Peer Discovery
 - `PeerDiscoveryHandler` broadcasts real heartbeat beacons every 3 seconds
 - Heartbeat includes `node_id`, `phone`, **`username`** (added in Session 4), and `timestamp`
@@ -571,8 +738,10 @@ java -cp out com.antor.f2p.engine.test.ValidationRunner
 | Priority | Task | Notes |
 |----------|------|-------|
 | **Medium** | Configure signing in `build.gradle` | So `assembleRelease` produces a signed installable APK |
-| **Medium** | Android lint sweep | Run `./gradlew lint` to catch deprecation warnings |
-| **Low** | Fix manifest permission duplications | `ACCESS_WIFI_STATE` and `CHANGE_WIFI_STATE` are declared twice in `AndroidManifest.xml` |
+| **Low** | Clean up remaining unused resources | ~42 unused colors/strings flagged by lint in `strings.xml`, `colors.xml` — leftover from earlier iterations |
+| **Low** | Fix remaining HardcodedText warnings | 72 hardcoded strings across layout files — move to `strings.xml` |
+| **Low** | Fix ContentDescription warnings | 24 ImageViews missing content descriptions — accessibility |
+| **Low** | Fix Autofill warnings | 9 layout fields missing autofill hints |
 | **Low** | BLE (Bluetooth Low Energy) discovery | Second transport fallback alongside Wi-Fi Direct for cross-subnet peer discovery |
 | **Low** | JUnit unit tests for `MessageDeduplicator` | Concurrent access, TTL eviction, capacity limits |
 | **Low** | Peer eviction with TTL | Remove stale peers from `PeerDiscovery` if heartbeat not received within N seconds; also clear from `UdpMeshManager.peerEndpoints` |
@@ -586,6 +755,16 @@ java -cp out com.antor.f2p.engine.test.ValidationRunner
 
 | Fix | Description |
 |-----|-------------|
+| **Navigation redesign — bottom nav removed** | Removed `BottomNavigationView` from all 3 layouts; navigation moved to top bar overflow menu + RSS icon |
+| **Top bar overflow menu with transport submenu** | Created `top_app_bar_menu.xml` with Chats, News Feed, Transport Mode submenu (3 tiers), Settings, About — used by all 3 activities |
+| **News feed transport selector visible** | Made transport radio group visible in `NewsFeedActivity` with OnCheckedChangeListener for persistence |
+| **Lifecycle crash fixes** | Added `onStop()` + try-catch `onDestroy()` cleanup to MainActivity, ChatActivity, NewsFeedActivity — safe bridge/SMS/notification teardown |
+| **Dead code removed** | `showTransportSettingsDialog()` from ChatActivity, `showSettingsDialog()` from NewsFeedActivity |
+| **DefaultLocale lint warnings fixed** | Added `Locale.ROOT` to 11 `toLowerCase()`/`toUpperCase()`/`String.format()` calls across 5 app files |
+| **InefficientWeight / NestedWeights fixed** | Layout width fixes in `activity_main.xml` — replaced nested weight with `wrap_content` + `layout_gravity="end"` |
+| **SmallSp font sizes fixed** | Bumped from 10sp/11sp → 12sp across 9 layout files |
+| **Duplicate manifest permissions removed** | Removed duplicated `ACCESS_WIFI_STATE` and `CHANGE_WIFI_STATE` declarations |
+| **Unused resources deleted** | Removed 4 unused drawables + `bottom_nav_menu.xml` |
 | **Encryption key-derivation standardisation** | Leading `+` stripped before SHA-256; `decrypt()` takes `phoneForDerivation`; ChatActivity decrypts with `myPhone` instead of `senderPhone` |
 | **Message self-loop prevention** | `ConcurrentHashMap` messageId cache + sender-phone check in `F2PBridge` UDP callback |
 | **Toast overlay fix** | `ToastUtils` cancels previous Toast before showing new one |
