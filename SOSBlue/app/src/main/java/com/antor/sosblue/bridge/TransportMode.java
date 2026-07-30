@@ -177,8 +177,7 @@ public enum TransportMode {
             // only — the real send path guards with explicit permission +
             // SIM-state checks.
             try {
-                if (android.telephony.SmsManager.getDefault() != null
-                        && android.os.Build.VERSION.SDK_INT < 23) {
+                if (android.telephony.SmsManager.getDefault() != null) {
                     return true;
                 }
             } catch (Throwable ignored) { }

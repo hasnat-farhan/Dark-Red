@@ -9,7 +9,7 @@ android {
     defaultConfig {
         applicationId "com.antor.sosblue"
         minSdk 26
-        targetSdk 36
+        targetSdk 37
         versionCode 256
         versionName "2.5.6"
 
