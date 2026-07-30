@@ -23,6 +23,8 @@ import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 
 import androidx.activity.EdgeToEdge;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.cardview.widget.CardView;
 import androidx.core.content.ContextCompat;
@@ -84,6 +86,19 @@ public class ChatActivity extends AppCompatActivity {
 
     // Chat
     private ChatAdapter chatAdapter;
+
+    /**
+     * Per-recipient chat-history persistence. Created in {@link #onCreate}
+     * and shut down in {@link #onDestroy}.
+     */
+    private ChatHistoryStore historyStore;
+
+    /**
+     * Normalised phone number of the currently-active chat thread. Used
+     * as the key for both loading and saving history.  Empty string while
+     * no recipient has been entered.
+     */
+    private String currentRecipientPhone = "";
 
     // Media picker — supports both images AND videos
     private ActivityResultLauncher<String[]> mediaPickerLauncher;
@@ -282,11 +297,9 @@ public class ChatActivity extends AppCompatActivity {
                     final String sender = senderPhone;
                     final String text = decryptedText;
                     runOnUiThread(() -> {
-                        MessageModel inbound = new MessageModel(text, false, sender, myPhone);
-                        java.util.List<MessageModel> updated = new ArrayList<>(
-                                chatAdapter.getCurrentList());
-                        updated.add(inbound);
-                        chatAdapter.submitList(updated);
+                        MessageModel inbound = new MessageModel(text, false, sender, myPhone,
+                                MessageModel.TRANSPORT_F2P, MessageModel.STATUS_DELIVERED);
+                        addMessage(inbound);
                     });
                 } catch (Exception e) {
                     android.util.Log.e("ChatActivity", "Failed to process incoming F2P message", e);
@@ -339,10 +352,9 @@ public class ChatActivity extends AppCompatActivity {
                     final String finalSender = sender != null ? sender : senderPhone;
                     final String finalText = text;
                     runOnUiThread(() -> {
-                        MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone);
-                        java.util.List<MessageModel> updated = new ArrayList<>(chatAdapter.getCurrentList());
-                        updated.add(inbound);
-                        chatAdapter.submitList(updated);
+                        MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
+                                MessageModel.TRANSPORT_SMS, MessageModel.STATUS_DELIVERED);
+                        addMessage(inbound);
                     });
                 } catch (Exception e) {
                     android.util.Log.e("ChatActivity", "Failed to decrypt inbound SMS F2P envelope", e);
@@ -377,6 +389,18 @@ public class ChatActivity extends AppCompatActivity {
                 String phone = s.toString().trim();
                 boolean valid = MessageEncryptor.isValidE164(phone);
                 encryptionBadge.setVisibility(valid ? View.VISIBLE : View.GONE);
+
+                // ── Chat history swap ──────────────────────────────────────
+                // When the user switches to a different recipient phone we
+                // flush the current thread to disk and load the new one.
+                String normalized = UserIdentity.normalizePhoneNumber(phone);
+                if (normalized == null) normalized = "";
+                if (!normalized.equals(currentRecipientPhone)) {
+                    // Save outgoing thread first (if any), then switch.
+                    persistHistory();
+                    currentRecipientPhone = normalized;
+                    loadHistoryFor(currentRecipientPhone);
+                }
             }
         });
 
@@ -408,6 +432,25 @@ public class ChatActivity extends AppCompatActivity {
         chatAdapter = new ChatAdapter();
         chatList.setLayoutManager(new LinearLayoutManager(this));
         chatList.setAdapter(chatAdapter);
+
+        // ── Per-recipient chat history ───────────────────────────────────────
+        historyStore = new ChatHistoryStore(this);
+        // Resolve the initial recipient up-front so cold-start loads the right
+        // thread instead of showing an empty chat.
+        String initialRecipientRaw = inputRecipientPhone.getText().toString().trim();
+        String initialRecipient = UserIdentity.normalizePhoneNumber(initialRecipientRaw);
+        currentRecipientPhone = initialRecipient != null ? initialRecipient : "";
+        if (!currentRecipientPhone.isEmpty()) {
+            final String key = currentRecipientPhone;
+            historyStore.loadAsync(key, (phone, messages) -> {
+                // Only apply if the recipient hasn't changed while we were
+                // reading disk.
+                if (phone.equals(currentRecipientPhone) && !messages.isEmpty()) {
+                    chatAdapter.submitList(new ArrayList<>(messages));
+                    chatList.scrollToPosition(chatAdapter.getItemCount() - 1);
+                }
+            });
+        }
 
         // ---------------------------------------------------------------
         //  Peer bar adapter (compact inline list in the CardView)
@@ -535,6 +578,14 @@ public class ChatActivity extends AppCompatActivity {
     }
 
     @Override
+    protected void onPause() {
+        // Flush the current thread to disk before the activity goes away.
+        persistHistory();
+        loadHistoryFor(currentRecipientPhone); // no-op if same; re-fetches if swap
+        super.onPause();
+    }
+
+    @Override
     protected void onDestroy() {
         if (bridge != null) {
             bridge.stopEngine();
@@ -547,6 +598,10 @@ public class ChatActivity extends AppCompatActivity {
             pendingSmsTransport = null;
         }
         smsEnvelopeListener = null;
+        if (historyStore != null) {
+            historyStore.shutdown();
+            historyStore = null;
+        }
         super.onDestroy();
     }
 
@@ -562,6 +617,58 @@ public class ChatActivity extends AppCompatActivity {
             return TransportMode.SMS_FALLBACK;
         }
         return TransportMode.SOSBLUE_MESH;
+    }
+
+    // ---------------------------------------------------------------
+    //  Chat history helpers
+    // ---------------------------------------------------------------
+
+    /**
+     * Append {@code msg} to the visible list and persist the new thread.
+     * Centralises the "snapshot + submitList + save" pattern so every
+     * message path (text send, media send, F2P inbound, SMS inbound)
+     * goes through the same code and the persistence layer can never
+     * drift out of sync with the adapter.
+     */
+    private void addMessage(@NonNull MessageModel msg) {
+        java.util.List<MessageModel> updated = new ArrayList<>(chatAdapter.getCurrentList());
+        updated.add(msg);
+        chatAdapter.submitList(updated);
+        persistHistory();
+    }
+
+    /**
+     * Snapshot the current adapter list and write it to disk for the
+     * currently-active recipient.  No-op if no recipient is set yet
+     * (we don't want to remember orphan messages under an empty key).
+     */
+    private void persistHistory() {
+        if (historyStore == null) return;
+        if (currentRecipientPhone == null || currentRecipientPhone.isEmpty()) return;
+        if (chatAdapter == null) return;
+        final String phone = currentRecipientPhone;
+        final java.util.List<MessageModel> snapshot =
+                new ArrayList<>(chatAdapter.getCurrentList());
+        historyStore.saveAsync(phone, snapshot, null);
+    }
+
+    /**
+     * Load history for {@code phone} from disk and replace the visible
+     * adapter list. Pass-through if {@code phone} is empty / null.
+     */
+    private void loadHistoryFor(@Nullable String phone) {
+        if (historyStore == null) return;
+        if (phone == null || phone.isEmpty()) {
+            chatAdapter.submitList(new ArrayList<>());
+            return;
+        }
+        final String key = phone;
+        historyStore.loadAsync(key, (loadedPhone, messages) -> {
+            // Only swap if the user hasn't switched to another thread
+            // while we were reading from disk.
+            if (!loadedPhone.equals(currentRecipientPhone)) return;
+            chatAdapter.submitList(new ArrayList<>(messages));
+        });
     }
 
     private void showSendProgress(boolean show) {
@@ -688,9 +795,9 @@ public class ChatActivity extends AppCompatActivity {
 
         // 3. Render locally (with F2P identity)
         String myPhone = UserIdentity.getPhoneNumber(this);
-        MessageModel outbound = new MessageModel(messageText, true, myPhone, recipientPhone);
-        java.util.List<MessageModel> updated = new ArrayList<>(chatAdapter.getCurrentList());
-        updated.add(outbound);
+        int transportCode = currentTransportCode();
+        MessageModel outbound = new MessageModel(messageText, true, myPhone, recipientPhone,
+                transportCode, MessageModel.STATUS_SENDING);
 
         RecyclerView chatList = findViewById(R.id.chatRecyclerView);
         final RecyclerView.AdapterDataObserver scrollObserver =
@@ -702,7 +809,7 @@ public class ChatActivity extends AppCompatActivity {
                     }
                 };
         chatAdapter.registerAdapterDataObserver(scrollObserver);
-        chatAdapter.submitList(updated);
+        addMessage(outbound);
 
         // 4. Show inline progress
         showSendProgress(true);
@@ -716,16 +823,37 @@ public class ChatActivity extends AppCompatActivity {
                     @Override
                     public void onSent() {
                         showSendProgress(false);
+                        markMessageStatus(outbound, MessageModel.STATUS_SENT);
                     }
 
                     @Override
                     public void onSendFailed(String reason) {
                         showSendProgress(false);
+                        markMessageStatus(outbound, MessageModel.STATUS_FAILED);
                         Snackbar.make(findViewById(R.id.root),
                                 "Send failed: " + reason,
                                 Snackbar.LENGTH_LONG).show();
                     }
                 });
+    }
+
+    /**
+     * Updates the status of an in-flight message in the adapter and persists
+     * history so the bubble reflects the new state after rotation or
+     * cold-start.
+     */
+    private void markMessageStatus(@NonNull MessageModel msg, int newStatus) {
+        if (msg.getStatus() == newStatus) return;
+        msg.setStatus(newStatus);
+        // Find the message by id so the right bubble redraws
+        java.util.List<MessageModel> current = chatAdapter.getCurrentList();
+        for (int i = 0; i < current.size(); i++) {
+            if (current.get(i).getId() == msg.getId()) {
+                chatAdapter.notifyItemChanged(i);
+                break;
+            }
+        }
+        persistHistory();
     }
 
     // ---------------------------------------------------------------
@@ -786,11 +914,9 @@ public class ChatActivity extends AppCompatActivity {
                 runOnUiThread(() -> {
                     MessageModel inbound = new MessageModel(
                             cap, false, senderPhone, myPhone,
-                            contentType, mediaUri.toString(), resolvedMimeType, fileSize);
-                    java.util.List<MessageModel> updated = new ArrayList<>(
-                            chatAdapter.getCurrentList());
-                    updated.add(inbound);
-                    chatAdapter.submitList(updated);
+                            contentType, mediaUri.toString(), resolvedMimeType, fileSize,
+                            MessageModel.TRANSPORT_F2P, MessageModel.STATUS_DELIVERED);
+                    addMessage(inbound);
                 });
             } else {
                 // Partial — log progress
@@ -946,10 +1072,8 @@ public class ChatActivity extends AppCompatActivity {
         String myPhone = UserIdentity.getPhoneNumber(this);
         MessageModel mediaMsg = new MessageModel(
                 "", true, myPhone, recipientPhone,
-                contentType, uri.toString(), mimeType, fileSize);
-
-        java.util.List<MessageModel> updated = new ArrayList<>(chatAdapter.getCurrentList());
-        updated.add(mediaMsg);
+                contentType, uri.toString(), mimeType, fileSize,
+                currentTransportCode(), MessageModel.STATUS_SENDING);
 
         RecyclerView chatList = findViewById(R.id.chatRecyclerView);
         final RecyclerView.AdapterDataObserver scrollObserver =
@@ -961,7 +1085,7 @@ public class ChatActivity extends AppCompatActivity {
                     }
                 };
         chatAdapter.registerAdapterDataObserver(scrollObserver);
-        chatAdapter.submitList(updated);
+        addMessage(mediaMsg);
 
         // Show progress
         showSendProgress(true);
@@ -981,16 +1105,34 @@ public class ChatActivity extends AppCompatActivity {
                     @Override
                     public void onComplete(String transferId, byte[] assembledData) {
                         showSendProgress(false);
+                        markMessageStatus(mediaMsg, MessageModel.STATUS_SENT);
                         ToastUtils.showShort(ChatActivity.this, "Media sent successfully");
                     }
 
                     @Override
                     public void onFailed(String transferId, String reason) {
                         showSendProgress(false);
+                        markMessageStatus(mediaMsg, MessageModel.STATUS_FAILED);
                         Snackbar.make(findViewById(R.id.root),
                                 "Media send failed: " + reason,
                                 Snackbar.LENGTH_LONG).show();
                     }
                 });
+    }
+
+    /**
+     * Map the currently-selected {@link TransportMode} to the
+     * {@link MessageModel#TRANSPORT_MESH}/{@link MessageModel#TRANSPORT_F2P}/
+     * {@link MessageModel#TRANSPORT_SMS} integer constants so newly-created
+     * outgoing messages can be tagged with the channel that will carry them.
+     */
+    private int currentTransportCode() {
+        TransportMode mode = TransportMode.load(this);
+        switch (mode) {
+            case SOSBLUE_MESH:   return MessageModel.TRANSPORT_MESH;
+            case F2P_SERVERLESS: return MessageModel.TRANSPORT_F2P;
+            case SMS_FALLBACK:   return MessageModel.TRANSPORT_SMS;
+            default:             return MessageModel.TRANSPORT_UNKNOWN;
+        }
     }
 }

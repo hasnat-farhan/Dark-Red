@@ -113,12 +113,26 @@ public enum TransportMode {
     }
 
     /**
-     * Heuristic SMS-capable check. Mirrors Android's stock messaging
-     * rule: the device declares {@code android.hardware.telephony} and
-     * has a SIM (subscriberId non-empty).  Does NOT request any
-     * permissions; permission gating happens at runtime via
-     * {@code ActivityCompat.requestPermissions} for SEND_SMS /
-     * RECEIVE_SMS.
+     * Heuristic SMS-capable check. The device declares
+     * {@code android.hardware.telephony} AND either:
+     *   • {@code getSimState()} reports READY/PIN/PUK/NETWORK_LOCKED
+     *     (a SIM is present and unlocked), or
+     *   • {@code READ_PHONE_STATE} is granted — assume the SIM exists
+     *     and let the actual {@code SmsManager.send…} call fail at
+     *     send-time if it doesn't.
+     * <p>
+     * NOTE: We deliberately do NOT call {@code getSubscriberId()}.
+     * Samsung Knox (and several carriers) block IMSI reads even with
+     * {@code READ_PHONE_STATE} granted, returning {@code null} and
+     * logging
+     * {@code W/TelephonyPermissions: reportAccessDeniedToReadIdentifiers}.
+     * That false negative makes every Samsung phone look SIM-less and
+     * permanently disables the SMS radio — which is exactly what we
+     * observed on RRCW902V2YY.
+     * <p>
+     * Does NOT request any permissions itself; the runtime grant
+     * happens via {@code ActivityCompat.requestPermissions} for
+     * SEND_SMS / RECEIVE_SMS in {@code ChatActivity}.
      */
     private static boolean hasTelephony(Context context) {
         try {
@@ -129,14 +143,43 @@ public enum TransportMode {
             TelephonyManager tm = (TelephonyManager)
                     context.getSystemService(Context.TELEPHONY_SERVICE);
             if (tm == null) return false;
-            // subscriberId is null when no SIM is present. Requires
-            // READ_PHONE_STATE permission on API 31+, but only as a
-            // gated runtime permission — null check is acceptable
-            // here and won't crash if the permission is denied; it
-            // will simply return null and we treat that as
-            // "no SIM → unavailable".
-            String subscriberId = tm.getSubscriberId();
-            return subscriberId != null && !subscriberId.isEmpty();
+
+            // Primary: SIM state. Doesn't require READ_PHONE_STATE on
+            // most OEMs (Samsung, Pixel, OnePlus) and is accurate on
+            // tablets with a cellular radio too.
+            int simState;
+            try { simState = tm.getSimState(); }
+            catch (Throwable ignored) { simState = TelephonyManager.SIM_STATE_UNKNOWN; }
+            switch (simState) {
+                case TelephonyManager.SIM_STATE_READY:
+                case TelephonyManager.SIM_STATE_PIN_REQUIRED:
+                case TelephonyManager.SIM_STATE_PUK_REQUIRED:
+                case TelephonyManager.SIM_STATE_NETWORK_LOCKED:
+                    return true;
+                default:
+                    // SIM_STATE_ABSENT / UNKNOWN / NOT_READY / CARD_IO_ERROR
+            }
+
+            // Fallback: READ_PHONE_STATE granted means the OS already
+            // accepted this app as phone-aware — trust the user-granted
+            // permission and let SmsManager surface real errors.
+            try {
+                if (androidx.core.content.ContextCompat.checkSelfPermission(
+                        context, android.Manifest.permission.READ_PHONE_STATE)
+                        == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    return true;
+                }
+            } catch (Throwable ignored) { }
+
+            // Last-ditch: if SmsManager.getDefault() is non-null the
+            // device has the SMS subsystem available.
+            try {
+                if (android.telephony.SmsManager.getDefault() != null) {
+                    return true;
+                }
+            } catch (Throwable ignored) { }
+
+            return false;
         } catch (Throwable t) {
             return false;
         }
