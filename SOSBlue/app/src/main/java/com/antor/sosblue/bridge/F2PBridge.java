@@ -988,6 +988,9 @@ public class F2PBridge {
                 success = sendMessage(messageText, recipientId, selectedMode);
                 if (!success) {
                     errorReason = "Sender or recipient phone number is missing";
+                } else {
+                    Log.d(TAG, "Message dispatched via " + selectedMode.name()
+                            + " to " + recipientId);
                 }
             } catch (Exception e) {
                 Log.e(TAG, "sendMessage failed", e);

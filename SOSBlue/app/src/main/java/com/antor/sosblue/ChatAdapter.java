@@ -53,7 +53,9 @@ public class ChatAdapter extends ListAdapter<MessageModel, ChatAdapter.ViewHolde
                                                   @NonNull MessageModel newItem) {
                     return oldItem.getText().equals(newItem.getText())
                             && oldItem.isSent() == newItem.isSent()
-                            && oldItem.getContentType() == newItem.getContentType();
+                            && oldItem.getContentType() == newItem.getContentType()
+                            && oldItem.getTransport() == newItem.getTransport()
+                            && oldItem.getStatus() == newItem.getStatus();
                 }
             };
 
@@ -103,8 +105,20 @@ public class ChatAdapter extends ListAdapter<MessageModel, ChatAdapter.ViewHolde
 
         // ── Common: timestamp ────────────────────────────────────
         String timestampStr = timeFormat.format(new Date(msg.getTimestamp()));
-        String suffix = msg.isSent() ? "  ✓✓" : "";
-        holder.timestampView.setText(timestampStr + suffix);
+        holder.timestampView.setText(timestampStr + msg.statusSuffix());
+
+        // ── Common: transport channel icon (mesh / F2P / SMS) ───────────────────────
+        int iconRes = MessageModel.transportIconRes(msg.getTransport());
+        if (holder.transportIcon != null) {
+            if (iconRes != 0) {
+                holder.transportIcon.setImageResource(iconRes);
+                holder.transportIcon.setVisibility(View.VISIBLE);
+                holder.transportIcon.setContentDescription(
+                        MessageModel.transportLabel(msg.getTransport()));
+            } else {
+                holder.transportIcon.setVisibility(View.GONE);
+            }
+        }
 
         // ── Text message ─────────────────────────────────────────
         if (!isMedia) {
@@ -229,6 +243,7 @@ public class ChatAdapter extends ListAdapter<MessageModel, ChatAdapter.ViewHolde
     static class ViewHolder extends RecyclerView.ViewHolder {
         final TextView textView;
         final TextView timestampView;
+        final ImageView transportIcon;
         final ImageView mediaPreview;
         final ImageView videoPlayIcon;
         final TextView mediaInfo;
@@ -238,6 +253,7 @@ public class ChatAdapter extends ListAdapter<MessageModel, ChatAdapter.ViewHolde
             super(itemView);
             textView = itemView.findViewById(R.id.messageText);
             timestampView = itemView.findViewById(R.id.timestampText);
+            transportIcon = itemView.findViewById(R.id.transportIcon);
             mediaPreview = itemView.findViewById(R.id.mediaPreview);
             videoPlayIcon = itemView.findViewById(R.id.videoPlayIcon);
             mediaInfo = itemView.findViewById(R.id.mediaInfo);
