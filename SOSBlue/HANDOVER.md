@@ -4,7 +4,7 @@
 **Last Build:** `assembleDebug` — **BUILD SUCCESSFUL** (verified Jul 30, 2026)
 **Lint:** 183 warnings, **0 errors** (down from 221)
 **Engine Tests:** 17/17 passed (7 Integration + 5 Routing + 5 Security — verified Jul 30, 2026)
-**Latest Session:** Menu Simplification & SMS Broadcast Targeting (Jul 30, 2026)
+**Latest Session:** Transport Badge on Inbox Conversation Cards (Jul 30, 2026)
 
 ---
 
@@ -160,7 +160,7 @@ F2P (Free-to-Peer) Serverless is a decentralized, serverless, off-grid peer-to-p
 | `item_message_media_incoming.xml` | Incoming media bubble |
 | `item_message_media_outgoing.xml` | Outgoing media bubble |
 | `item_peer_dark.xml` | Peer device card in peer list |
-| `item_conversation.xml` | **NEW** — Conversation inbox card with avatar circle, name, preview text, timestamp, unread badge |
+| `item_conversation.xml` | **NEW** — Conversation inbox card with avatar circle, name, preview text, timestamp, unread badge, and colored transport badge chip (MESH/F2P/SMS) |
 | `item_news_card.xml` | **NEW** — News broadcast card with author, transport badge, timestamp, text body, media indicator |
 
 ### Menu Files
@@ -173,7 +173,7 @@ F2P (Free-to-Peer) Serverless is a decentralized, serverless, off-grid peer-to-p
 |------|---------|
 | `ConversationModel.java` | **NEW** — Data class with display name, phone, last message preview, timestamp, unread count, has-media flag, avatar char, relative time formatter |
 | `ConversationRegistry.java` | **NEW** — Static `ConcurrentHashMap`-based registry (thread-safe) — `update()`, `getAll()` (sorted by newest first), `markRead()`, `clearAll()` |
-| `ConversationAdapter.java` | **NEW** — `ListAdapter` with `DiffUtil`, click listener, unread badge display, media indicator icon, avatar circle with first-letter fallback |
+| `ConversationAdapter.java` | **NEW** — `ListAdapter` with `DiffUtil`, click listener, unread badge display, media indicator icon, transport badge chip (MESH blue, F2P green, SMS blue-grey), avatar circle with first-letter fallback |
 
 ### Wandering Fibre Engine — `f2p-serverless/wandering-fibre-engine/`
 
@@ -286,6 +286,13 @@ No code changes — re-ran engine tests (17/17 passed) and `assembleDebug` (BUIL
 ---
 
 ## 5. Files Modified
+
+### Session 18 (Transport Badge on Inbox Conversation Cards)
+
+| File | What Changed |
+|------|-------------|
+| `item_conversation.xml` | **Added transport badge chip** — New `@+id/transportBadge` TextView placed between display name and timestamp in Row 1. Styled as a small chip: 18dp height, 9sp bold white text, `paddingHorizontal="6dp"`, `letterSpacing="0.05"`. Hidden by default (`visibility="gone"`). |
+| `ConversationAdapter.java` | **Added transport badge binding** — `bind()` now reads `getLastTransportMode()` and displays a colored chip: "MESH" (blue `#2196F3`), "F2P" (green `#388E3C`), "SMS" (blue-grey `#455A64`). Uses `GradientDrawable` with rounded corners for a pill shape. Added `setBadgeStyle()` helper. |
 
 ### Session 17 (Menu Simplification + How SOSBlue Works Dialog)
 
@@ -628,6 +635,15 @@ When a P2P peer is selected:
 ---
 
 ## 7. Key Features Implemented
+
+### ✅ Transport Badge on Inbox Conversation Cards (Session 18)
+- **Colored transport chip on each conversation card** — A small pill badge (18dp tall, 9sp text) now appears between the display name and timestamp on every conversation card in the inbox, showing which transport tier was used for the last message.
+- **Color-coded by transport:**
+  - **Blue** (`#2196F3`) — "MESH" for SOSBlue Mesh conversations
+  - **Green** (`#388E3C`) — "F2P" for F2P Serverless conversations
+  - **Blue-grey** (`#455A64`) — "SMS" for SMS Relay conversations
+- **Hidden when unknown** — Badge only appears when a transport mode has been recorded, falling back gracefully for legacy conversations.
+- **Programmatic pill styling** — Uses `GradientDrawable` with rounded corners for a clean, chip-like appearance without needing a separate drawable resource.
 
 ### ✅ Menu Simplified to Settings + How SOSBlue Works (Session 17)
 - **Replaced "News Feed" menu item** with "How SOSBlue Works" — the overflow menu now shows only Settings and the new About option.

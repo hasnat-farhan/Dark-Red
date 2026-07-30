@@ -1,5 +1,6 @@
 package com.antor.sosblue.inbox;
 
+import android.graphics.drawable.GradientDrawable;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -72,6 +73,7 @@ public class ConversationAdapter extends ListAdapter<ConversationModel, Conversa
         private final TextView timestampText;
         private final TextView unreadBadge;
         private final TextView mediaIndicator;
+        private final TextView transportBadge;
 
         ViewHolder(@NonNull View itemView) {
             super(itemView);
@@ -81,6 +83,7 @@ public class ConversationAdapter extends ListAdapter<ConversationModel, Conversa
             timestampText = itemView.findViewById(R.id.timestampText);
             unreadBadge = itemView.findViewById(R.id.unreadBadge);
             mediaIndicator = itemView.findViewById(R.id.mediaIndicator);
+            transportBadge = itemView.findViewById(R.id.transportBadge);
         }
 
         void bind(@NonNull ConversationModel conversation,
@@ -117,8 +120,41 @@ public class ConversationAdapter extends ListAdapter<ConversationModel, Conversa
                 unreadBadge.setVisibility(View.GONE);
             }
 
+            // Transport badge
+            String transportMode = conversation.getLastTransportMode();
+            if (transportMode != null && !transportMode.isEmpty()) {
+                transportBadge.setVisibility(View.VISIBLE);
+                switch (transportMode) {
+                    case "SOSBLUE_MESH":
+                        transportBadge.setText("MESH");
+                        setBadgeStyle(transportBadge, "#2196F3"); // Blue
+                        break;
+                    case "F2P_SERVERLESS":
+                        transportBadge.setText("F2P");
+                        setBadgeStyle(transportBadge, "#388E3C"); // Green
+                        break;
+                    case "SMS_FALLBACK":
+                        transportBadge.setText("SMS");
+                        setBadgeStyle(transportBadge, "#455A64"); // Blue-grey
+                        break;
+                    default:
+                        transportBadge.setVisibility(View.GONE);
+                        break;
+                }
+            } else {
+                transportBadge.setVisibility(View.GONE);
+            }
+
             // Click listener
             itemView.setOnClickListener(v -> clickListener.onConversationClick(conversation));
+        }
+
+        private void setBadgeStyle(@NonNull TextView badge, @NonNull String hexColor) {
+            GradientDrawable bg = new GradientDrawable();
+            bg.setShape(GradientDrawable.RECTANGLE);
+            bg.setCornerRadius(9f);
+            bg.setColor(android.graphics.Color.parseColor(hexColor));
+            badge.setBackground(bg);
         }
     }
 }
