@@ -195,39 +195,61 @@
     </com.google.android.material.card.MaterialCardView>
 
     <!-- ============================================================
-         Transport Selector Bar
+         Transport Selector Bar (horizontal scroll → all three radios visible on narrow phones)
          ============================================================ -->
-    <RadioGroup
-        android:id="@+id/transportRadioGroup"
+    <HorizontalScrollView
+        android:id="@+id/transportScroll"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
+        android:fillViewport="false"
+        android:scrollbars="none"
+        android:overScrollMode="never"
+        android:background="@color/chat_background"
         android:paddingHorizontal="16dp"
         android:paddingTop="6dp"
-        android:paddingBottom="2dp"
-        android:background="@color/chat_background"
-        android:checkedButton="@+id/rb_sosblue_mesh">
+        android:paddingBottom="2dp">
 
-        <RadioButton
-            android:id="@+id/rb_sosblue_mesh"
+        <RadioGroup
+            android:id="@+id/transportRadioGroup"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="SOSBlue Mesh"
-            android:textSize="13sp"
-            android:textColor="@color/transport_text"
-            android:buttonTint="@color/transport_button_tint"
-            android:checked="true" />
+            android:orientation="horizontal"
+            android:checkedButton="@+id/rb_sosblue_mesh">
 
-        <RadioButton
-            android:id="@+id/rb_f2p_serverless"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="F2P Serverless"
-            android:textSize="13sp"
-            android:textColor="@color/transport_text"
-            android:buttonTint="@color/transport_button_tint"
-            android:layout_marginStart="24dp" />
-    </RadioGroup>
+            <RadioButton
+                android:id="@+id/rb_sosblue_mesh"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="SOSBlue Mesh"
+                android:textSize="13sp"
+                android:textColor="@color/transport_text"
+                android:buttonTint="@color/transport_button_tint"
+                android:checked="true" />
+
+            <RadioButton
+                android:id="@+id/rb_f2p_serverless"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="F2P Serverless"
+                android:textSize="13sp"
+                android:textColor="@color/transport_text"
+                android:buttonTint="@color/transport_button_tint"
+                android:layout_marginStart="16dp" />
+
+            <RadioButton
+                android:id="@+id/rb_sms_fallback"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/transport_sms"
+                android:textSize="13sp"
+                android:textColor="@color/transport_text"
+                android:buttonTint="@color/transport_button_tint"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="8dp" />
+
+        </RadioGroup>
+
+    </HorizontalScrollView>
 
     <!-- ============================================================
          Recipient Phone Number — E2E encryption target

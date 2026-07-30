@@ -60,8 +60,27 @@ public class ChatActivity extends AppCompatActivity {
     private boolean engineReady;
     private boolean f2pRequested;
 
+    /**
+     * Locally-created {@link com.antor.sosblue.bridge.SmsTransport} — only
+     * non-null when ChatActivity booted the carrier ahead of any SMS send
+     * (so the receive pipe is wired before the user picks "SMS Relay").
+     * Unregistered in {@link #onDestroy()} to release the receiver.
+     */
+    private com.antor.sosblue.bridge.SmsTransport pendingSmsTransport;
+    /** Listener we attached so it can be removed in onDestroy(). */
+    private com.antor.sosblue.bridge.SmsTransport.OnSmsEnvelopeListener smsEnvelopeListener;
+
     /** Permission launcher for Wi-Fi/location permissions needed on Android 11 (Oppo). */
     private ActivityResultLauncher<String[]> wifiPermissionLauncher;
+
+    /** Permission launcher for SMS (SEND_SMS + RECEIVE_SMS + READ_PHONE_STATE). */
+    private ActivityResultLauncher<String[]> smsPermissionLauncher;
+
+    /**
+     * Saved transport mode BEFORE the user tapped SMS Relay — used to
+     * revert the radio when permission is denied or SIM is absent.
+     */
+    private int lastSavedRadioId = R.id.rb_sosblue_mesh;
 
     // Chat
     private ChatAdapter chatAdapter;
@@ -124,6 +143,40 @@ public class ChatActivity extends AppCompatActivity {
                     }
                 });
 
+        // ── Runtime permission launcher for SMS carrier ──────────────
+        // SEND_SMS + RECEIVE_SMS are both runtime-dangerous on API 23+
+        // (and Play Protect flags them as a sensitive pair). READ_PHONE_STATE
+        // gates `TelephonyManager.getSubscriberId()` so we can detect SIM
+        // presence. We request all three at once so the user only sees one
+        // dialog; if they deny any of the first two we revert the radio.
+        smsPermissionLauncher = registerForActivityResult(
+                new ActivityResultContracts.RequestMultiplePermissions(), result -> {
+                    boolean sendGranted = Boolean.TRUE.equals(
+                            result.get(Manifest.permission.SEND_SMS));
+                    boolean receiveGranted = Boolean.TRUE.equals(
+                            result.get(Manifest.permission.RECEIVE_SMS));
+                    boolean phoneGranted = Boolean.TRUE.equals(
+                            result.get(Manifest.permission.READ_PHONE_STATE));
+                    if (sendGranted && receiveGranted) {
+                        Log.i("ChatActivity",
+                                "SMS permissions granted (phone=" + phoneGranted + ")");
+                        // Re-fire onTransportModeChanged now that permissions
+                        // are confirmed — the listener may have already called
+                        // it once, but if the user was slow to grant we'd have
+                        // bounced off the gate.
+                        onTransportModeChanged(TransportMode.SMS_FALLBACK);
+                    } else {
+                        Log.w("ChatActivity",
+                                "SMS permissions denied (send=" + sendGranted
+                                        + ", receive=" + receiveGranted
+                                        + ", phone=" + phoneGranted + ")");
+                        Snackbar.make(findViewById(R.id.root),
+                                getString(R.string.transport_sms_permission_required),
+                                Snackbar.LENGTH_LONG).show();
+                        revertRadioToLastSaved();
+                    }
+                });
+
         EdgeToEdge.enable(this);
         setContentView(R.layout.activity_chat);
 
@@ -153,6 +206,12 @@ public class ChatActivity extends AppCompatActivity {
         // ---------------------------------------------------------------
 
         bridge = new F2PBridge(this);
+
+        // ── Register SMS error listener ─────────────────────────────
+        // Surfaces synchronous SMS send failures (no telephony, no
+        // sender phone, SecurityException) via Snackbar so the user
+        // gets feedback without reading logcat.
+        bridge.addSmsErrorListener(reason -> showSmsError(reason));
 
         // ── Register incoming message handler ────────────────────────
         // Listen on onPacketReceived (NOT onSignal) because incoming
@@ -247,6 +306,51 @@ public class ChatActivity extends AppCompatActivity {
             }
         });
 
+        // ── SMS receive hook ───────────────────────────────────────────
+        // Eagerly create the SmsTransport so the receiver is registered
+        // for the lifetime of this Activity. Listeners attached here
+        // receive every inbound F2P-envelope-bearing SMS and inject
+        // decrypted text into the same chat list as mesh/F2P messages.
+        com.antor.sosblue.bridge.SmsTransport sms = bridge.getSmsTransport();
+        if (sms == null) {
+            sms = new com.antor.sosblue.bridge.SmsTransport(this);
+            // Mirror the bridge's lazy allocation by reflection would be
+            // overkill — instead, prompt an init by calling isAvailable
+            // (no-op besides the telephony check), then proceed. The
+            // bridge will reuse this same instance on the first SMS send.
+            sms.register();
+            pendingSmsTransport = sms;
+        } else {
+            sms.register();
+        }
+        smsEnvelopeListener = new com.antor.sosblue.bridge.SmsTransport.OnSmsEnvelopeListener() {
+            @Override
+            public void onEnvelope(String senderPhone, String recipientPhone, byte[] encryptedPayload) {
+                try {
+                    String myPhoneRaw = UserIdentity.getPhoneNumber(ChatActivity.this);
+                    if (myPhoneRaw == null) return;
+                    String myPhone = UserIdentity.normalizePhoneNumber(myPhoneRaw);
+                    if (!myPhone.equals(recipientPhone)) return; // not for us
+                    if (senderPhone == null || encryptedPayload == null) return;
+
+                    byte[] decryptedBytes = MessageEncryptor.decrypt(myPhone, encryptedPayload);
+                    String text = new String(decryptedBytes, java.nio.charset.StandardCharsets.UTF_8);
+                    String sender = UserIdentity.normalizePhoneNumber(senderPhone);
+                    final String finalSender = sender != null ? sender : senderPhone;
+                    final String finalText = text;
+                    runOnUiThread(() -> {
+                        MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone);
+                        java.util.List<MessageModel> updated = new ArrayList<>(chatAdapter.getCurrentList());
+                        updated.add(inbound);
+                        chatAdapter.submitList(updated);
+                    });
+                } catch (Exception e) {
+                    android.util.Log.e("ChatActivity", "Failed to decrypt inbound SMS F2P envelope", e);
+                }
+            }
+        };
+        sms.addEnvelopeListener(smsEnvelopeListener);
+
         // ---------------------------------------------------------------
         //  Bind views
         // ---------------------------------------------------------------
@@ -333,6 +437,30 @@ public class ChatActivity extends AppCompatActivity {
 
         transportRadioGroup.setOnCheckedChangeListener((group, checkedId) -> {
             TransportMode mode = radioIdToTransportMode(checkedId);
+            // ── SMS gate: runtime permission request on first selection ──
+            // SEND_SMS + RECEIVE_SMS + READ_PHONE_STATE are all dangerous,
+            // so the OS won't surface them at install time — we have to
+            // ask here. If the device has no SIM/telephony at all, we
+            // short-circuit with a Snackbar and revert to F2P.
+            if (mode == TransportMode.SMS_FALLBACK) {
+                if (!TransportMode.SMS_FALLBACK.isAvailable(this)) {
+                    Snackbar.make(findViewById(R.id.root),
+                            getString(R.string.transport_sms_unavailable),
+                            Snackbar.LENGTH_LONG).show();
+                    revertRadioToLastSaved();
+                    return;
+                }
+                if (!hasAllSmsPermissions()) {
+                    requestSmsPermissions();
+                    // Persist now so a permission deny leaves the user's
+                    // last successful choice intact. If they ultimately
+                    // grant, the radio stays as-is; if they deny, the
+                    // permission callback reverts the radio.
+                    mode.save(this);
+                    onTransportModeChanged(mode);
+                    return;
+                }
+            }
             mode.save(this);
             onTransportModeChanged(mode);
         });
@@ -411,6 +539,14 @@ public class ChatActivity extends AppCompatActivity {
         if (bridge != null) {
             bridge.stopEngine();
         }
+        if (pendingSmsTransport != null) {
+            if (smsEnvelopeListener != null) {
+                pendingSmsTransport.removeEnvelopeListener(smsEnvelopeListener);
+            }
+            pendingSmsTransport.unregister();
+            pendingSmsTransport = null;
+        }
+        smsEnvelopeListener = null;
         super.onDestroy();
     }
 
@@ -421,6 +557,9 @@ public class ChatActivity extends AppCompatActivity {
     private static TransportMode radioIdToTransportMode(int radioId) {
         if (radioId == R.id.rb_f2p_serverless) {
             return TransportMode.F2P_SERVERLESS;
+        }
+        if (radioId == R.id.rb_sms_fallback) {
+            return TransportMode.SMS_FALLBACK;
         }
         return TransportMode.SOSBLUE_MESH;
     }
@@ -443,6 +582,22 @@ public class ChatActivity extends AppCompatActivity {
             // Show peer bar with nearby devices
             peerBarCard.setVisibility(View.VISIBLE);
             refreshPeerBar();
+        } else if (mode == TransportMode.SMS_FALLBACK) {
+            // ── SMS carrier path ─────────────────────────────────────
+            // No mesh, no Wi-Fi, no F2P — but messages still need to
+            // go out. Lazy-init the SmsTransport so the receiver is
+            // wired for inbound envelopes, and make sure permissions
+            // are checked before the first send.
+            peerBarCard.setVisibility(View.GONE);
+            bufferingProgress.setVisibility(View.GONE);
+            com.antor.sosblue.bridge.SmsTransport sms = bridge.getSmsTransport();
+            if (sms == null) {
+                sms = new com.antor.sosblue.bridge.SmsTransport(this);
+                bridge.setSmsTransport(sms);
+            }
+            sms.register();
+            pendingSmsTransport = sms;
+            ToastUtils.showShort(this, "SMS Relay ready");
         } else {
             // F2P Serverless — hide peer bar, show buffering spinner
             peerBarCard.setVisibility(View.GONE);
@@ -698,6 +853,74 @@ public class ChatActivity extends AppCompatActivity {
         if (!needed.isEmpty()) {
             wifiPermissionLauncher.launch(needed.toArray(new String[0]));
         }
+    }
+
+    // ----------------------------------------------------------------
+    //  SMS permission helpers
+    // ----------------------------------------------------------------
+
+    /**
+     * @return {@code true} only when SEND_SMS and RECEIVE_SMS are both
+     *         already granted. READ_PHONE_STATE is best-effort.
+     */
+    private boolean hasAllSmsPermissions() {
+        boolean send = ContextCompat.checkSelfPermission(this,
+                Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED;
+        boolean receive = ContextCompat.checkSelfPermission(this,
+                Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED;
+        return send && receive;
+    }
+
+    /**
+     * Reverts the transport radio to whichever was active BEFORE the user
+     * tapped SMS Relay. Called when the OS denies the SMS permission
+     * dialog, or when telephony is unavailable.
+     */
+    private void revertRadioToLastSaved() {
+        TransportMode saved = TransportMode.load(this);
+        int targetId = (saved == TransportMode.F2P_SERVERLESS)
+                ? R.id.rb_f2p_serverless
+                : R.id.rb_sosblue_mesh;
+        if (transportRadioGroup.getCheckedRadioButtonId() != targetId) {
+            transportRadioGroup.check(targetId);
+        }
+    }
+
+    /**
+     * Triggers the system permission dialog for SMS carrier access. Called
+     * by the radio listener when SMS Relay is selected and permissions
+     * are not already granted.
+     */
+    private void requestSmsPermissions() {
+        java.util.List<String> needed = new java.util.ArrayList<>();
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS)
+                != PackageManager.PERMISSION_GRANTED) {
+            needed.add(Manifest.permission.SEND_SMS);
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS)
+                != PackageManager.PERMISSION_GRANTED) {
+            needed.add(Manifest.permission.RECEIVE_SMS);
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE)
+                != PackageManager.PERMISSION_GRANTED) {
+            needed.add(Manifest.permission.READ_PHONE_STATE);
+        }
+        if (!needed.isEmpty()) {
+            smsPermissionLauncher.launch(needed.toArray(new String[0]));
+        }
+    }
+
+    /**
+     * Public hook for the F2PBridge / SmsTransport to surface a failure
+     * reason to the user via Snackbar. Safe to call from any thread
+     * (post-runs to the main thread).
+     */
+    public void showSmsError(String reason) {
+        final String msg = (reason == null || reason.isEmpty())
+                ? getString(R.string.sms_send_failed)
+                : getString(R.string.sms_send_failed) + ": " + reason;
+        new android.os.Handler(android.os.Looper.getMainLooper()).post(() ->
+                Snackbar.make(findViewById(R.id.root), msg, Snackbar.LENGTH_LONG).show());
     }
 
     private void onMediaSelected(Uri uri) {

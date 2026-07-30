@@ -16,3 +16,14 @@ Thumbs.db
 # Gradle (local, not checked in)
 .gradle/
 local.properties
+/apk-extracted
+
+# Diagnostic / verification artifacts (UI dumps, screenshots, adb push buffers)
+/ui-*.xml
+/ui*.xml
+/screen-*.png
+/*.png
+/installed-*.apk
+/bundled-*.txt
+/sosblue.apk
+/sosblue-*.apk

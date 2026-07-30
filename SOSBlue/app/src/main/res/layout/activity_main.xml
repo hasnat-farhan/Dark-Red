@@ -273,38 +273,59 @@
 
     </FrameLayout>
 
-    <!-- Transport mode selector (RadioGroup — between chat area and input) -->
-    <RadioGroup
-        android:id="@+id/transportRadioGroup"
+    <!-- Transport mode selector (horizontal scroll → all three radios visible on narrow phones) -->
+    <HorizontalScrollView
+        android:id="@+id/transportScroll"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
+        android:fillViewport="false"
+        android:scrollbars="none"
+        android:overScrollMode="never"
         android:paddingHorizontal="16dp"
         android:paddingTop="8dp"
-        android:paddingBottom="4dp"
-        android:checkedButton="@+id/rb_sosblue_mesh">
+        android:paddingBottom="4dp">
 
-        <RadioButton
-            android:id="@+id/rb_sosblue_mesh"
+        <RadioGroup
+            android:id="@+id/transportRadioGroup"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="SOSBlue Mesh"
-            android:textSize="13sp"
-            android:textColor="@color/transport_text"
-            android:buttonTint="@color/transport_button_tint"
-            android:checked="true" />
+            android:orientation="horizontal"
+            android:checkedButton="@+id/rb_sosblue_mesh">
 
-        <RadioButton
-            android:id="@+id/rb_f2p_serverless"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="F2P Serverless"
-            android:textSize="13sp"
-            android:textColor="@color/transport_text"
-            android:buttonTint="@color/transport_button_tint"
-            android:layout_marginStart="24dp" />
+            <RadioButton
+                android:id="@+id/rb_sosblue_mesh"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="SOSBlue Mesh"
+                android:textSize="12sp"
+                android:textColor="@color/transport_text"
+                android:buttonTint="@color/transport_button_tint"
+                android:checked="true" />
 
-    </RadioGroup>
+            <RadioButton
+                android:id="@+id/rb_f2p_serverless"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="F2P Serverless"
+                android:textSize="12sp"
+                android:textColor="@color/transport_text"
+                android:buttonTint="@color/transport_button_tint"
+                android:layout_marginStart="16dp" />
+
+            <RadioButton
+                android:id="@+id/rb_sms_fallback"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/transport_sms"
+                android:textSize="12sp"
+                android:textColor="@color/transport_text"
+                android:buttonTint="@color/transport_button_tint"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="8dp" />
+
+        </RadioGroup>
+
+    </HorizontalScrollView>
 
     <LinearLayout
         android:id="@+id/replyPreviewContainer"

@@ -1,4 +1,9 @@
 <resources>
     <string name="app_name">SOSBlue</string>
     <string name="hint_recipient_phone">Recipient Phone (e.g. +8801XXXXXXXX)</string>
+    <string name="transport_sms">SMS Relay</string>
+    <string name="transport_sms_unavailable">SMS not available on this device</string>
+    <string name="transport_sms_permission_required">SMS permission required to send via carrier</string>
+    <string name="sms_send_ok">Sent via SMS</string>
+    <string name="sms_send_failed">SMS send failed</string>
 </resources>

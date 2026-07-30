@@ -74,6 +74,15 @@ public class F2PBridge {
     /** Wi-Fi Direct manager — fallback when broadcasts don't cross subnets. */
     private WifiDirectManager wifiDirectManager;
 
+    /**
+     * SMS carrier for offline-last-resort delivery of F2P envelopes when no
+     * mesh peers, Wi-Fi, or remote endpoints are reachable. Lazily created
+     * on the first {@link TransportMode#SMS_FALLBACK} send (so phones without
+     * telephony never allocate it) and tracked here so it's not garbage-collected
+     * mid-conversation.
+     */
+    private SmsTransport smsTransport;
+
     /** Peer discovery listeners — notified when a peer is discovered or lost. */
     private final CopyOnWriteArrayList<PeerDiscoveryListener> peerDiscoveryListeners;
 
@@ -833,8 +842,120 @@ public class F2PBridge {
                 Log.d(TAG, "sendMessage → F2P_SERVERLESS (encrypted) to " + recipientPhone);
                 return true;
             }
+            case SMS_FALLBACK: {
+                // ── Offline-last-resort: SMS carrier ─────────────────
+                // No mesh, no Wi-Fi, no remote — fall back to SMS so the
+                // recipient's phone still receives the F2P envelope as a
+                // multipart SMS. The receiver re-assembles and routes it
+                // back through the standard listener pipeline.
+                if (!TransportMode.SMS_FALLBACK.isAvailable(appContext)) {
+                    Log.w(TAG, "SMS_FALLBACK selected but device lacks telephony");
+                    return false;
+                }
+
+                String senderPhone = UserIdentity.getPhoneNumber(appContext);
+                String recipientPhone = UserIdentity.normalizePhoneNumber(recipientId);
+
+                if (senderPhone == null || recipientPhone == null) {
+                    Log.e(TAG, "Cannot send SMS — sender or recipient phone is null");
+                    return false;
+                }
+
+                // Encrypt with the recipient's phone-derived key — same crypto
+                // as F2P_SERVERLESS, so receivers can decrypt uniformly.
+                byte[] encryptedPayload = MessageEncryptor.encrypt(recipientPhone, messageText);
+                byte[] nonce = MessageEncryptor.generateNonce();
+
+                F2PMessage f2pMsg = new F2PMessage(
+                        senderPhone,
+                        recipientPhone,
+                        encryptedPayload,
+                        System.currentTimeMillis(),
+                        nonce
+                );
+
+                if (smsTransport == null) {
+                    smsTransport = new SmsTransport(appContext);
+                }
+
+                final String finalRecipient = recipientPhone;
+                smsTransport.sendEnvelope(f2pMsg, new SmsTransport.OnSmsSendListener() {
+                    @Override
+                    public void onSent() {
+                        Log.d(TAG, "SMS sent to " + finalRecipient);
+                    }
+                    @Override
+                    public void onFailed(String reason) {
+                        Log.e(TAG, "SMS send failed to " + finalRecipient + ": " + reason);
+                        // Surface synchronous failures (no telephony, no
+                        // sender phone, SecurityException) to the UI so
+                        // the user gets feedback without having to read
+                        // logcat. The listener runs on the main thread.
+                        notifySmsError(reason);
+                    }
+                });
+
+                Log.d(TAG, "sendMessage → SMS_FALLBACK to " + recipientPhone);
+                return true;
+            }
             default:
                 return false;
+        }
+    }
+
+    /**
+     * Returns the live {@link SmsTransport} for this bridge, or {@code null}
+     * if no SMS send has occurred yet. Activities may use it to attach
+     * envelope listeners for inbound SMS routing.
+     */
+    public SmsTransport getSmsTransport() {
+        return smsTransport;
+    }
+
+    /**
+     * Sets the active {@link SmsTransport}. Used by the Activity to
+     * pre-allocate + register the receiver before the first SMS send
+     * (so inbound envelopes are caught even if the user never explicitly
+     * picked SMS as the transport). Replaces any existing instance.
+     */
+    public void setSmsTransport(SmsTransport transport) {
+        this.smsTransport = transport;
+    }
+
+    // ---------------------------------------------------------------
+    //  SMS error listener — surfaces send failures to the UI
+    // ---------------------------------------------------------------
+
+    /**
+     * Callback invoked on the <b>main thread</b> when a synchronous
+     * SMS send failure occurs (missing telephony, missing sender
+     * phone, SecurityException, or other {@code sendEnvelope}
+     * exception). The Activity uses this to show a Snackbar so the
+     * user gets feedback without needing to read logcat.
+     */
+    public interface OnSmsErrorListener {
+        void onSmsError(String reason);
+    }
+
+    private final CopyOnWriteArrayList<OnSmsErrorListener> smsErrorListeners =
+            new CopyOnWriteArrayList<>();
+
+    public void addSmsErrorListener(OnSmsErrorListener listener) {
+        if (listener != null) smsErrorListeners.add(listener);
+    }
+
+    public void removeSmsErrorListener(OnSmsErrorListener listener) {
+        smsErrorListeners.remove(listener);
+    }
+
+    private void notifySmsError(String reason) {
+        if (smsErrorListeners.isEmpty()) return;
+        for (OnSmsErrorListener l : smsErrorListeners) {
+            try {
+                l.onSmsError(reason);
+            } catch (Exception e) {
+                Log.w(TAG, "OnSmsErrorListener threw", e);
+            }
         }
     }
 
