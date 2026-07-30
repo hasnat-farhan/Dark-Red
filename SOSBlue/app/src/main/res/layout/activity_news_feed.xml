@@ -5,7 +5,6 @@
     android:id="@+id/newsRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/chat_background"
     android:orientation="vertical"
     tools:context=".news.NewsFeedActivity">
 
@@ -155,17 +154,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:checkedButton="@+id/news_rb_sosblue_mesh">
-
-            <RadioButton
-                android:id="@+id/news_rb_sosblue_mesh"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="SOSBlue Mesh"
-                android:textSize="13sp"
-                android:textColor="@color/transport_text"
-                android:buttonTint="@color/transport_button_tint"
-                android:checked="true" />
+            android:checkedButton="@+id/news_rb_f2p_serverless">
 
             <RadioButton
                 android:id="@+id/news_rb_f2p_serverless"
@@ -175,13 +164,23 @@
                 android:textSize="13sp"
                 android:textColor="@color/transport_text"
                 android:buttonTint="@color/transport_button_tint"
-                android:layout_marginStart="16dp" />
+                android:checked="true" />
 
             <RadioButton
                 android:id="@+id/news_rb_sms_fallback"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/transport_sms"
+                android:textSize="13sp"
+                android:textColor="@color/transport_text"
+                android:buttonTint="@color/transport_button_tint"
+                android:layout_marginStart="16dp" />
+
+            <RadioButton
+                android:id="@+id/news_rb_sosblue_mesh"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="SOSBlue Mesh"
                 android:textSize="13sp"
                 android:textColor="@color/transport_text"
                 android:buttonTint="@color/transport_button_tint"

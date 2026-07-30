@@ -52,12 +52,12 @@ public enum TransportMode {
      */
     public static TransportMode load(Context context) {
         if (isIsolatedProcess()) {
-            return SOSBLUE_MESH;  // safe default – no storage access
+            return F2P_SERVERLESS;  // safe default – no storage access
         }
         SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        String name = prefs.getString(KEY_MODE, SOSBLUE_MESH.name());
+        String name = prefs.getString(KEY_MODE, F2P_SERVERLESS.name());
         try { return valueOf(name); }
-        catch (IllegalArgumentException e) { return SOSBLUE_MESH; }
+        catch (IllegalArgumentException e) { return F2P_SERVERLESS; }
     }
 
     /**

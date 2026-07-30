@@ -192,12 +192,26 @@ public class SmsTransport {
         // we also need to declare RECEIVER_EXPORTED for non-protected
         // broadcasts, but SMS_RECEIVED is a protected broadcast so we
         // can leave it unexported.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            appContext.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED);
-        } else {
-            appContext.registerReceiver(receiver, filter);
+        //
+        // ⚠️ On Android 14+ (incl. Samsung OneUI 6.x), registerReceiver
+        // for SMS_RECEIVED can throw SecurityException if RECEIVE_SMS
+        // runtime permission is not yet granted by the user. We catch
+        // this gracefully and log instead of crashing.
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                appContext.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED);
+            } else {
+                appContext.registerReceiver(receiver, filter);
+            }
+            Log.i(TAG, "SmsReceiver registered (foreground)");
+        } catch (SecurityException e) {
+            Log.w(TAG, "Could not register SmsReceiver: RECEIVE_SMS not granted yet — "
+                    + e.getMessage());
+            receiver = null;
+        } catch (Exception e) {
+            Log.w(TAG, "Could not register SmsReceiver: " + e.getMessage());
+            receiver = null;
         }
-        Log.i(TAG, "SmsReceiver registered (foreground)");
     }
 
     /**

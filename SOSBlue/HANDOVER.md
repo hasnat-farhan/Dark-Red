@@ -4,7 +4,7 @@
 **Last Build:** `assembleDebug` — **BUILD SUCCESSFUL** (verified Jul 30, 2026)
 **Lint:** 0 errors (verified Jul 30, 2026)
 **Engine Tests:** 17/17 passed (7 Integration + 5 Routing + 5 Security — verified Jul 30, 2026)
-**Latest Session:** F2P Default Transport & Rapid Mode-Switch Queueing (Jul 30, 2026)
+**Latest Session:** Lint Cleanup — ObsoleteSdkInt, Overdraw, NestedWeights & NotifyDataSetChanged (Jul 30, 2026)
 
 ---
 
@@ -223,6 +223,11 @@ F2P (Free-to-Peer) Serverless is a decentralized, serverless, off-grid peer-to-p
 
 ## 4. New Files Created
 
+### Session 31 (Lint Cleanup — ObsoleteSdkInt, Overdraw, NestedWeights & NotifyDataSetChanged)
+| File | Purpose |
+|------|---------|
+| *No new files* | All changes in existing files (see ##5) |
+
 ### Session 30 (F2P Default Transport & Rapid Mode-Switch Queueing)
 | File | Purpose |
 |------|---------|
@@ -321,6 +326,21 @@ No code changes — re-ran engine tests (17/17 passed) and `assembleDebug` (BUIL
 ---
 
 ## 5. Files Modified
+
+### Session 31 (Lint Cleanup — ObsoleteSdkInt, Overdraw, NestedWeights & NotifyDataSetChanged)
+
+| File | What Changed |
+|------|-------------|
+| `ChatActivity.java` | **Removed unnecessary `Build.VERSION.SDK_INT >= LOLLIPOP` guard** — `setIndeterminateTintList()` was wrapped in an SDK check that always passes (minSdk=26). Fixes 1 ObsoleteSdkInt lint warning. |
+| `NetworkConnectivityManager.java` | **Replaced dead CONNECTIVITY_ACTION broadcast receiver block** — The `SDK_INT < N` guard was always false (minSdk=26), making the entire CONNECTIVITY_ACTION receiver + nested Tiramisu check unreachable. Replaced with a comment stub. Fixes 2 ObsoleteSdkInt lint warnings. |
+| `NotificationHelper.java` | **Removed unnecessary `SDK_INT < O` return** — `createNotificationChannels()` had an early return for pre-O devices that are impossible at minSdk=26. Fixes 1 ObsoleteSdkInt lint warning. |
+| `PeerDiscoveryAdapter.java` | **Replaced `notifyDataSetChanged()` with proper diff notifications** — `updatePeers()` now tracks old/new list sizes and calls `notifyItemRangeInserted()`, `notifyItemRangeRemoved()`, and `notifyItemRangeChanged()` as appropriate. Fixes 1 NotifyDataSetChanged lint warning without risking IndexOutOfBoundsException. |
+| `activity_main.xml` | **Removed nested weight** — Changed the search overlay layout from `layout_width="0dp" layout_weight="1"` to `layout_width="match_parent"` to fix 1 NestedWeights lint warning. |
+| `activity_chat.xml` | **Removed root `android:background`** — Theme already paints background; removing avoids overdraw. Fixes 1 Overdraw lint warning. |
+| `activity_main.xml` | **Removed root `android:background`** — Same Overdraw fix. |
+| `activity_news_feed.xml` | **Removed root `android:background`** — Same Overdraw fix. |
+| `activity_settings.xml` | **Removed root `android:background`** — Same Overdraw fix. |
+| `activity_sign_in.xml` | **Removed root `android:background`** — Same Overdraw fix. |
 
 ### Session 30 (F2P Default Transport & Rapid Mode-Switch Queueing)
 

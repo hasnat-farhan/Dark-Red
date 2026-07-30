@@ -58,7 +58,7 @@ public class SettingsActivity extends AppCompatActivity {
         // ── Transport mode radio group ──────────────────────────────
         transportRadioGroup = findViewById(R.id.transportRadioGroup);
 
-        // Restore persisted transport mode
+        // Restore persisted transport mode (defaults to F2P on first launch)
         TransportMode savedMode = TransportMode.load(this);
         switch (savedMode) {
             case F2P_SERVERLESS:
@@ -67,7 +67,7 @@ public class SettingsActivity extends AppCompatActivity {
             case SMS_FALLBACK:
                 transportRadioGroup.check(R.id.rb_sms_fallback);
                 break;
-            default:
+            case SOSBLUE_MESH:
                 transportRadioGroup.check(R.id.rb_sosblue_mesh);
                 break;
         }
@@ -83,8 +83,11 @@ public class SettingsActivity extends AppCompatActivity {
                     case F2P_SERVERLESS:
                         transportRadioGroup.check(R.id.rb_f2p_serverless);
                         break;
-                    default:
+                    case SOSBLUE_MESH:
                         transportRadioGroup.check(R.id.rb_sosblue_mesh);
+                        break;
+                    default:
+                        transportRadioGroup.check(R.id.rb_f2p_serverless);
                         break;
                 }
                 return;
@@ -114,9 +117,9 @@ public class SettingsActivity extends AppCompatActivity {
             settingsManager.resetToDefaults();
             switchChat.setChecked(true);
             switchNews.setChecked(true);
-            // Reset transport to SOSBlue Mesh (default)
-            transportRadioGroup.check(R.id.rb_sosblue_mesh);
-            TransportMode.SOSBLUE_MESH.save(this);
+            // Reset transport to F2P Serverless (default)
+            transportRadioGroup.check(R.id.rb_f2p_serverless);
+            TransportMode.F2P_SERVERLESS.save(this);
             ToastUtils.showShort(this, "Settings reset to defaults");
         });
     }

@@ -41,8 +41,18 @@ public class PeerDiscoveryAdapter extends RecyclerView.Adapter<PeerDiscoveryAdap
      * snapshot.
      */
     public void updatePeers(@NonNull List<PeerDevice> newPeers) {
+        int oldSize = getItemCount();
         this.peers = new CopyOnWriteArrayList<>(newPeers);
-        notifyDataSetChanged();
+        int newSize = getItemCount();
+        if (newSize > oldSize) {
+            notifyItemRangeInserted(oldSize, newSize - oldSize);
+        } else if (newSize < oldSize) {
+            notifyItemRangeRemoved(newSize, oldSize - newSize);
+        }
+        int common = Math.min(oldSize, newSize);
+        if (common > 0) {
+            notifyItemRangeChanged(0, common);
+        }
     }
 
     @NonNull

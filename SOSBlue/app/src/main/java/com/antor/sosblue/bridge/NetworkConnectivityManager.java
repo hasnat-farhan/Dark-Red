@@ -194,26 +194,10 @@ public class NetworkConnectivityManager {
                 }
             }
         };
-        IntentFilter connFilter = new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION);
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
-            // CONNECTIVITY_ACTION is deprecated on N+, but still works on older
-            // The Tiramisu check below is always false here because N > TIRAMISU is false,
-            // but we keep it for symmetry and future minSdk bumps.
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    appContext.registerReceiver(networkStateReceiver, connFilter, Context.RECEIVER_EXPORTED);
-                } else {
-                    appContext.registerReceiver(networkStateReceiver, connFilter);
-                }
-            } catch (SecurityException e) {
-                Log.w(TAG, "Cannot register network state receiver (missing permission): "
-                        + e.getMessage());
-                networkStateReceiver = null;
-            } catch (Exception e) {
-                Log.w(TAG, "Cannot register network state receiver", e);
-                networkStateReceiver = null;
-            }
-        }
+        // CONNECTIVITY_ACTION is deprecated on API 24+. Since minSdk is 26,
+        // this receiver registration is dead code — network changes are
+        // detected via ConnectivityManager.NetworkCallback instead.
+        Log.v(TAG, "CONNECTIVITY_ACTION listener skipped (minSdk=26, callback-based)");
 
         registered = true;
         Log.i(TAG, "NetworkConnectivityManager registered");

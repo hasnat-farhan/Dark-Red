@@ -72,6 +72,32 @@ public class ChatActivity extends AppCompatActivity {
     private TransportMode currentTransportMode = null;
 
     /**
+     * Set to {@code true} when the F2P engine is starting asynchronously
+     * (via {@link F2PBridge#startEngineAsync}). The {@code finally} block
+     * in {@link #onTransportModeChanged(TransportMode)} checks this flag
+     * before dismissing the mode-switch dialog: if the async engine is
+     * still starting, we intentionally leave the dialog showing and wait
+     * for {@code onEngineStarted} / {@code onEngineError} to dismiss it.
+     * <p>
+     * Without this guard, the {@code finally} block would see the dialog
+     * still showing (engine hasn't started yet) and prematurely call
+     * {@code dismissModeSwitchDialog(false)}, which resets
+     * {@code isModeSwitching = false} and allows a SECOND mode switch
+     * while the first engine init is still in progress. This causes
+     * concurrent engine starts, socket conflicts, and ultimately kicks
+     * the user out of the chat activity.
+     * </p>
+     */
+    private volatile boolean awaitingF2pEngine = false;
+
+    /**
+     * Deferred mode switch — set when the user taps a different radio button
+     * while a mode switch is already in progress. Processed immediately after
+     * the current switch completes (in {@link #dismissModeSwitchDialog}).
+     */
+    private TransportMode pendingMode = null;
+
+    /**
      * Non-cancelable progress dialog shown during transport mode transitions.
      * Dismissed automatically when the switch completes or after 1.5s timeout.
      */
@@ -119,7 +145,7 @@ public class ChatActivity extends AppCompatActivity {
      * Saved transport mode BEFORE the user tapped SMS Relay — used to
      * revert the radio when permission is denied or SIM is absent.
      */
-    private int lastSavedRadioId = R.id.rb_sosblue_mesh;
+    private int lastSavedRadioId = R.id.rb_f2p_serverless;
 
     // Chat
     private ChatAdapter chatAdapter;
@@ -293,17 +319,25 @@ public class ChatActivity extends AppCompatActivity {
                         Log.i("ChatActivity",
                                 "SMS permissions granted (phone=" + phoneGranted
                                         + ", read=" + readGranted + ")");
-                        // Re-fire onTransportModeChanged now that permissions
-                        // are confirmed — the listener may have already called
-                        // it once, but if the user was slow to grant we'd have
-                        // bounced off the gate.
-                        onTransportModeChanged(TransportMode.SMS_FALLBACK);
-                        // Kick a fresh inbox scan now that READ_SMS may have
-                        // just been granted; previously-delivered DR1 envelopes
-                        // will surface in chat within a second.
+                        // ── Force-register the SMS receiver (may have failed
+                        //    earlier when RECEIVE_SMS was not yet granted).
+                        //    We do this DIRECTLY instead of re-firing
+                        //    onTransportModeChanged() because the mode guard
+                        //    (mode == currentTransportMode) would block the
+                        //    call — and the receiver would stay null forever.
+                        com.antor.sosblue.bridge.SmsTransport smsForReg =
+                                pendingSmsTransport != null
+                                        ? pendingSmsTransport
+                                        : (bridge != null ? bridge.getSmsTransport() : null);
+                        if (smsForReg != null) {
+                            smsForReg.register();
+                        }
+                        // ── Kick a fresh inbox scan now that READ_SMS may have
+                        //    just been granted; previously-delivered DR1 envelopes
+                        //    will surface in chat within a second.
                         if (readGranted && bridge != null) {
                             com.antor.sosblue.bridge.SmsTransport smsT =
-                                    bridge.getSmsTransport();
+                                    smsForReg != null ? smsForReg : bridge.getSmsTransport();
                             if (smsT != null) smsT.scanInbox();
                         }
                     } else {
@@ -776,21 +810,36 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
         // ---------------------------------------------------------------
 
         TransportMode savedMode = TransportMode.load(this);
-        if (savedMode == TransportMode.F2P_SERVERLESS) {
-            transportRadioGroup.check(R.id.rb_f2p_serverless);
+        if (savedMode != null) {
+            // Restore the user's last-selected transport mode
+            switch (savedMode) {
+                case F2P_SERVERLESS:
+                    transportRadioGroup.check(R.id.rb_f2p_serverless);
+                    break;
+                case SMS_FALLBACK:
+                    transportRadioGroup.check(R.id.rb_sms_fallback);
+                    break;
+                case SOSBLUE_MESH:
+                    transportRadioGroup.check(R.id.rb_sosblue_mesh);
+                    break;
+            }
+            // TransportMode.load() now defaults to F2P, so all cases covered
         } else {
-            transportRadioGroup.check(R.id.rb_sosblue_mesh);
+            // No saved mode — default to F2P (first button, checked in layout)
+            transportRadioGroup.check(R.id.rb_f2p_serverless);
         }
 
         transportRadioGroup.setOnCheckedChangeListener((group, checkedId) -> {
-            // ── Guard: skip if we're in the middle of a mode switch ──
-            // This prevents re-entrant calls when revertRadioToLastSaved()
-            // programmatically checks a radio button while processing
-            // a previous user tap.
+            TransportMode mode = radioIdToTransportMode(checkedId);
+            // ── Guard: defer if we're in the middle of a mode switch ──
+            // Instead of silently dropping the tap, we store it as
+            // pendingMode so it gets processed immediately after the
+            // current transition completes.
             if (isModeSwitching) {
+                Log.d("ChatActivity", "Mode switch in progress, deferring tap to " + mode);
+                pendingMode = mode;
                 return;
             }
-            TransportMode mode = radioIdToTransportMode(checkedId);
             // ── Guard: skip if mode hasn't actually changed ──
             if (mode == currentTransportMode) {
                 return;
@@ -1075,6 +1124,11 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
 
     private void onTransportModeChanged(TransportMode mode) {
         // ── Guard: prevent re-entrant calls during an active transition ──
+        // Rapid taps are now queued via pendingMode (set in the
+        // OnCheckedChangeListener) and processed after dismissModeSwitchDialog
+        // resets isModeSwitching. The guard is still needed here to prevent
+        // the OnCheckedChangeListener from re-entering onTransportModeChanged
+        // while we are synchronously completing a Mesh or SMS switch.
         if (isModeSwitching) {
             Log.d("ChatActivity", "Mode switch already in progress, deferring " + mode);
             return;
@@ -1193,10 +1247,16 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
                             .build();
 
                     if (bridge != null) {
+                        // ── Mark that we're awaiting async engine start ──
+                        // This flag prevents the finally block from dismissing
+                        // the mode-switch dialog prematurely. It is cleared
+                        // in both onEngineStarted() and onEngineError().
+                        awaitingF2pEngine = true;
                         bridge.startEngineAsync(config, new F2PBridge.OnEngineStartListener() {
                             @Override
                             public void onEngineStarted() {
                                 engineReady = true;
+                                awaitingF2pEngine = false;
                                 dismissModeSwitchDialog(true);
                                 refreshPeerBar();
                                 ToastUtils.showShort(ChatActivity.this, "F2P Serverless ready");
@@ -1204,6 +1264,7 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
 
                             @Override
                             public void onEngineError(int statusCode, String message) {
+                                awaitingF2pEngine = false;
                                 dismissModeSwitchDialog(false);
                                 View __root = findViewById(R.id.root);
                                 if (__root != null) {
@@ -1243,8 +1304,21 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
             //
             // Safety net: if a RuntimeException slips through the
             // catch block and leaves the dialog showing, dismiss it
-            // here to prevent a stuck dialog.
-            if (modeSwitchDialog != null && modeSwitchDialog.isShowing()) {
+            // here — BUT ONLY if we are NOT waiting for the async F2P
+            // engine to start. If awaitingF2pEngine is true, the dialog
+            // stays up intentionally and will be dismissed by the
+            // onEngineStarted / onEngineError callback.
+            //
+            // This guards against the following crash sequence:
+            //   1. User taps F2P -> startEngineAsync() queued
+            //   2. finally block runs, dialog is showing
+            //   3. WITHOUT this guard, dialog dismissed, isModeSwitching=false
+            //   4. User taps SMS again -> new onTransportModeChanged() fires
+            //   5. Second engine start queues while first is still running
+            //   6. Socket conflicts -> engine crash -> ChatActivity finishes
+            //   7. MainActivity shows empty inbox (ConversationRegistry lost)
+            if (!awaitingF2pEngine
+                    && modeSwitchDialog != null && modeSwitchDialog.isShowing()) {
                 Log.w("ChatActivity",
                         "Mode switch finally: dismissing stuck dialog for " + mode);
                 dismissModeSwitchDialog(false);
@@ -1275,11 +1349,9 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
                     android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
                     android.widget.LinearLayout.LayoutParams.WRAP_CONTENT));
             spinner.setIndeterminate(true);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                spinner.setIndeterminateTintList(
-                        android.content.res.ColorStateList.valueOf(
-                                getColor(R.color.primary_red)));
-            }
+            spinner.setIndeterminateTintList(
+                    android.content.res.ColorStateList.valueOf(
+                            getColor(R.color.primary_red)));
             builder.setView(spinner);
             modeSwitchSpinner = spinner;
             modeSwitchDialog = builder.show();
@@ -1367,6 +1439,23 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
         // onTransportModeChanged() and the timeout runnable both know
         // the transition is complete.
         isModeSwitching = false;
+
+        // ── Process deferred mode switch (rapid tap queued via pendingMode) ──
+        // If the user tapped a different radio button while the previous
+        // switch was still in progress, that mode was stored in pendingMode.
+        // Now that isModeSwitching is false, fire the deferred switch.
+        if (pendingMode != null && pendingMode != currentTransportMode) {
+            TransportMode deferred = pendingMode;
+            pendingMode = null;
+            Log.d("ChatActivity", "Processing deferred mode switch to " + deferred);
+            // Directly fire the mode switch instead of going through
+            // the OnCheckedChangeListener (which would hit the mode guard).
+            onTransportModeChanged(deferred);
+        } else {
+            // Clear pending if it matched the current mode (user double-tapped
+            // the same button, or the deferred mode became irrelevant).
+            pendingMode = null;
+        }
     }
 
     // ---------------------------------------------------------------
@@ -1786,11 +1875,24 @@ markMessageStatus(outbound, MessageModel.STATUS_FAILED);
      * tapped SMS Relay. Called when the OS denies the SMS permission
      * dialog, or when telephony is unavailable.
      */
+    /**
+     * Reverts the radio group to the last-saved transport mode.
+     * Used when SMS permission is denied or SIM is absent.
+     */
     private void revertRadioToLastSaved() {
         TransportMode saved = TransportMode.load(this);
-        int targetId = (saved == TransportMode.F2P_SERVERLESS)
-                ? R.id.rb_f2p_serverless
-                : R.id.rb_sosblue_mesh;
+        int targetId;
+        switch (saved) {
+            case F2P_SERVERLESS:
+                targetId = R.id.rb_f2p_serverless;
+                break;
+            case SMS_FALLBACK:
+                targetId = R.id.rb_sms_fallback;
+                break;
+            default:
+                targetId = R.id.rb_f2p_serverless;
+                break;
+        }
         if (transportRadioGroup.getCheckedRadioButtonId() != targetId) {
             transportRadioGroup.check(targetId);
         }

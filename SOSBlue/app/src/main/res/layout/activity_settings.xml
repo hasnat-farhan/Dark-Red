@@ -4,7 +4,6 @@
     android:id="@+id/settingsRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/chat_background"
     android:orientation="vertical">
 
     <!-- ============================================================
@@ -114,18 +113,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:checkedButton="@+id/rb_sosblue_mesh">
-
-                        <RadioButton
-                            android:id="@+id/rb_sosblue_mesh"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="SOSBlue Mesh"
-                            android:textColor="@color/transport_text"
-                            android:buttonTint="@color/transport_button_tint"
-                            android:textSize="15sp"
-                            android:paddingVertical="8dp"
-                            android:checked="true" />
+                        android:checkedButton="@+id/rb_f2p_serverless">
 
                         <RadioButton
                             android:id="@+id/rb_f2p_serverless"
@@ -135,13 +123,24 @@
                             android:textColor="@color/transport_text"
                             android:buttonTint="@color/transport_button_tint"
                             android:textSize="15sp"
-                            android:paddingVertical="8dp" />
+                            android:paddingVertical="8dp"
+                            android:checked="true" />
 
                         <RadioButton
                             android:id="@+id/rb_sms_fallback"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="@string/transport_sms"
+                            android:textColor="@color/transport_text"
+                            android:buttonTint="@color/transport_button_tint"
+                            android:textSize="15sp"
+                            android:paddingVertical="8dp" />
+
+                        <RadioButton
+                            android:id="@+id/rb_sosblue_mesh"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="SOSBlue Mesh"
                             android:textColor="@color/transport_text"
                             android:buttonTint="@color/transport_button_tint"
                             android:textSize="15sp"

@@ -255,7 +255,6 @@ public final class NotificationHelper {
      * Safe to call repeatedly — the OS ignores re-creation of existing channels.
      */
     public void createNotificationChannels() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
 
         NotificationManager nm = (NotificationManager)
                 appContext.getSystemService(Context.NOTIFICATION_SERVICE);

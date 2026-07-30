@@ -137,7 +137,7 @@ public class NewsFeedActivity extends AppCompatActivity {
         } else if (savedMode == TransportMode.SMS_FALLBACK) {
             transportRadioGroup.check(R.id.news_rb_sms_fallback);
         } else {
-            transportRadioGroup.check(R.id.news_rb_sosblue_mesh);
+            transportRadioGroup.check(R.id.news_rb_f2p_serverless);
         }
 
         // Persist transport mode changes made directly via the radio group
