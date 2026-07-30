@@ -25,67 +25,36 @@
         android:paddingBottom="8dp"
         android:elevation="2dp">
 
-        <!-- App icon + online indicator -->
-        <FrameLayout
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:layout_marginEnd="8dp">
+        <!-- Offline-36 title (no icon) -->
 
-            <ImageView
-                android:id="@+id/appIcon"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:background="@drawable/circle_bg"
-                android:scaleType="centerInside"
-                android:src="@drawable/nearby" />
-
-            <View
-                android:id="@+id/onlineIndicator"
-                android:layout_width="10dp"
-                android:layout_height="10dp"
-                android:layout_gravity="bottom|end"
-                android:background="@drawable/circle_bg"
-                android:backgroundTint="@color/online_green"
-                android:elevation="2dp"
-                android:visibility="gone" />
-        </FrameLayout>
-
-        <!-- Title section: "Nearby Devices" + dropdown hint -->
-        <LinearLayout
-            android:id="@+id/titleContainer"
+        <!-- App title: Offline-36 or chat partner name -->
+        <TextView
+            android:id="@+id/appTitle"
             android:layout_width="0dp"
-            android:layout_height="match_parent"
+            android:layout_height="wrap_content"
             android:layout_weight="1"
             android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:clickable="true"
-            android:focusable="true"
-            android:background="?android:attr/selectableItemBackground">
+            android:ellipsize="end"
+            android:singleLine="true"
+            android:text="Offline-36"
+            android:textColor="@color/title_text"
+            android:textSize="18sp"
+            android:textStyle="bold" />
 
-            <TextView
-                android:id="@+id/appTitle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:singleLine="true"
-                android:text="Nearby Devices"
-                android:textColor="@color/title_text"
-                android:textSize="18sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/peerCountBadge"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="6dp"
-                android:background="@drawable/bg_round_unseen_msg"
-                android:gravity="center"
-                android:minWidth="22dp"
-                android:paddingHorizontal="2dp"
-                android:text="0"
-                android:textColor="@color/badge_text"
-                android:textSize="12sp"
-                android:visibility="gone" />
-        </LinearLayout>
+        <!-- Peer count badge (now positioned after the title) -->
+        <TextView
+            android:id="@+id/peerCountBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="4dp"
+            android:background="@drawable/bg_round_unseen_msg"
+            android:gravity="center"
+            android:minWidth="18dp"
+            android:paddingHorizontal="2dp"
+            android:text="0"
+            android:textColor="@color/badge_text"
+            android:textSize="10sp"
+            android:visibility="gone" />
 
         <!-- Action icons -->
         <ImageView
@@ -327,7 +296,7 @@
                 android:id="@+id/rb_sosblue_mesh"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="SOSBlue Mesh"
+                android:text="@string/transport_sosblue_mesh"
                 android:textSize="13sp"
                 android:textColor="@color/transport_text"
                 android:buttonTint="@color/transport_button_tint"
@@ -418,10 +387,10 @@
             android:id="@+id/attachmentButton"
             android:layout_width="36dp"
             android:layout_height="36dp"
-            android:src="@drawable/text"
+            android:src="@drawable/ic_image"
             android:scaleType="centerInside"
             android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:contentDescription="Attach file"
+            android:contentDescription="Attach image or video"
             app:tint="@color/attachment_icon" />
 
         <!-- Message input (pill-shaped) -->

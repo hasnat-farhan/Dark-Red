@@ -191,6 +191,14 @@ public class MainActivity extends AppCompatActivity {
                 } else if (id == R.id.menu_settings) {
                     startActivity(new Intent(MainActivity.this, SettingsActivity.class));
                     return true;
+                } else if (id == R.id.menu_nearby) {
+                    // Open ChatActivity where the peer bar can be viewed
+                    try {
+                        startActivity(new Intent(MainActivity.this, ChatActivity.class));
+                    } catch (Exception e) {
+                        Log.e(TAG, "Failed to open ChatActivity for Nearby Devices", e);
+                    }
+                    return true;
                 }
                 return false;
             });
@@ -218,11 +226,11 @@ public class MainActivity extends AppCompatActivity {
         allConversations = ConversationRegistry.getAll();
         conversationAdapter.submitList(new ArrayList<>(allConversations));
 
-        // Update title with conversation count
+        // Title stays "Offline-36" — conversation count shown via badge elsewhere
         int count = allConversations.size();
         TextView titleView = findViewById(R.id.appTitle);
         if (titleView != null) {
-            titleView.setText(count > 0 ? "Chats (" + count + ")" : "Chats");
+            titleView.setText("Offline-36");
         }
 
         // Show/hide empty state

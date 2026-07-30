@@ -180,7 +180,7 @@
                 android:id="@+id/news_rb_sosblue_mesh"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="SOSBlue Mesh"
+                android:text="@string/transport_sosblue_mesh"
                 android:textSize="13sp"
                 android:textColor="@color/transport_text"
                 android:buttonTint="@color/transport_button_tint"

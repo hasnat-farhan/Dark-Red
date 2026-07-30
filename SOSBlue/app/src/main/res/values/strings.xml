@@ -37,6 +37,7 @@
     <string name="menu_switch_news">Switch to News Feed</string>
     <string name="menu_settings">Settings / Mode Switch</string>
     <string name="menu_about">How Offline-36 Works</string>
+    <string name="menu_nearby">Nearby Devices</string>
 
     <!-- Dialogs -->
     <string name="dialog_transport_title">Transport Mode</string>

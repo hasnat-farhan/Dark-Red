@@ -525,7 +525,7 @@ public class NewsFeedActivity extends AppCompatActivity {
             newsItems.add(new F2PNewsPacket(
                     UUID.randomUUID().toString(), myName, myPhone,
                     F2PNewsPacket.TransportType.SOSBLUE_MESH,
-                    "Welcome to SOSBlue Broadcast News! This is a demo broadcast sent over the SOSBlue Mesh.",
+                    "Welcome to Offline-36 Broadcast News! This is a demo broadcast sent over the Offline-36 Mesh.",
                     null, null, System.currentTimeMillis() - 120_000));
             newsItems.add(new F2PNewsPacket(
                     UUID.randomUUID().toString(), "Demo User", "+8801700000000",

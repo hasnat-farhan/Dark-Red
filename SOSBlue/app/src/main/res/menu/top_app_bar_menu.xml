@@ -7,6 +7,11 @@
         android:title="@string/menu_about" />
 
     <item
+        android:id="@+id/menu_nearby"
+        android:icon="@drawable/nearby"
+        android:title="@string/menu_nearby" />
+
+    <item
         android:id="@+id/menu_settings"
         android:icon="@drawable/ic_settings"
         android:title="@string/menu_settings" />

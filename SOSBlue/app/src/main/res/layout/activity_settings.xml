@@ -140,7 +140,7 @@
                             android:id="@+id/rb_sosblue_mesh"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="SOSBlue Mesh"
+                            android:text="@string/transport_sosblue_mesh"
                             android:textColor="@color/transport_text"
                             android:buttonTint="@color/transport_button_tint"
                             android:textSize="15sp"
@@ -319,7 +319,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="SOSBlue"
+                        android:text="Offline-36"
                         android:textColor="@color/title_text"
                         android:textSize="22sp"
                         android:textStyle="bold" />
@@ -327,7 +327,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Secure Offline-Safe Blue Messenger"
+                        android:text="Offline Mesh Messenger"
                         android:textColor="@color/peer_detail_text"
                         android:textSize="13sp"
                         android:layout_marginTop="4dp" />
@@ -351,7 +351,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="A peer-to-peer messaging app with 3-tier transport:\n\n• SOSBlue Mesh (BLE / WiFi-Direct P2P)\n• F2P Serverless (WanderingFibreEngine)\n• SMS Relay (carrier fallback)\n\nAll messages are end-to-end encrypted."
+                        android:text="@string/settings_about_desc"
                         android:textColor="@color/peer_detail_text"
                         android:textSize="13sp"
                         android:lineSpacingExtra="4dp"

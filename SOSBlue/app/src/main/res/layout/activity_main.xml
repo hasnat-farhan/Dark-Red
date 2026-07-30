@@ -25,30 +25,7 @@
         android:paddingBottom="8dp"
         android:elevation="2dp">
 
-        <FrameLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="8dp">
-
-            <ImageView
-                android:id="@+id/appIcon"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:background="@drawable/circle_bg"
-                android:scaleType="centerInside"
-                android:src="@drawable/nearby"
-                android:contentDescription="App icon" />
-
-            <View
-                android:id="@+id/onlineIndicator"
-                android:layout_width="10dp"
-                android:layout_height="10dp"
-                android:layout_gravity="bottom|end"
-                android:background="@drawable/circle_bg"
-                android:backgroundTint="@color/online_green"
-                android:elevation="2dp"
-                android:visibility="gone" />
-        </FrameLayout>
+        <!-- No app icon — just the Offline-36 title -->
 
         <TextView
             android:id="@+id/appTitle"
@@ -58,7 +35,7 @@
             android:ellipsize="end"
             android:maxLength="26"
             android:singleLine="true"
-            android:text="Chats"
+            android:text="Offline-36"
             android:textColor="@color/title_text"
             android:textSize="20sp"
             android:textStyle="bold" />
@@ -185,7 +162,7 @@
             android:textColor="@color/white"
             android:textSize="14sp"
             android:contentDescription="Start New Chat"
-            app:icon="@drawable/text"
+            app:icon="@drawable/ic_bottom_chat"
             app:iconTint="@color/white"
             app:backgroundTint="@color/primary_red"
             app:elevation="6dp" />

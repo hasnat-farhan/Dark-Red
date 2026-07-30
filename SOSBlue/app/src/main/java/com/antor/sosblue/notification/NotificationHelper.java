@@ -55,7 +55,7 @@ public final class NotificationHelper {
 
     // Channel descriptions
     private static final String CHANNEL_CHAT_DESC =
-            "Notifications for incoming peer-to-peer messages via SOSBlue Mesh, F2P, or SMS";
+            "Notifications for incoming peer-to-peer messages via Offline-36 Mesh, F2P, or SMS";
     private static final String CHANNEL_NEWS_DESC =
             "Notifications for broadcast news items pushed over any transport tier";
 

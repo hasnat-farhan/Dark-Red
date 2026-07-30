@@ -1,10 +1,10 @@
 # Offline-36 — Handover Document
 
 **Branch:** `main`
-**Last Build:** `assembleDebug` — **BUILD SUCCESSFUL** (verified Jul 30, 2026)
+**Last Build:** `assembleDebug` — **BUILD SUCCESSFUL** (verified Jul 31, 2026)
 **Lint:** 0 errors (verified Jul 30, 2026)
 **Engine Tests:** 17/17 passed (7 Integration + 5 Routing + 5 Security — verified Jul 30, 2026)
-**Latest Session:** Lint Cleanup — ObsoleteSdkInt, Overdraw, NestedWeights & NotifyDataSetChanged (Jul 30, 2026)
+**Latest Session:** F2P Serverless crash fix — NPE guard in startEngine + executor crash barrier (Jul 31, 2026)
 
 ---
 
@@ -223,6 +223,21 @@ F2P (Free-to-Peer) Serverless is a decentralized, serverless, off-grid peer-to-p
 
 ## 4. New Files Created
 
+### Session 34 (F2P Serverless Crash Fix — NPE Guard in startEngine + Executor Crash Barrier)
+| File | Purpose |
+|------|---------|
+| *No new files* | All changes in existing files (see ##5) |
+
+### Session 33 (UI/UX Polish — Image Icon, Top Bar Redesign, SOSBlue→Offline-36 Cleanup)
+| File | Purpose |
+|------|---------|
+| `drawable/ic_image.xml` | **NEW** — Material Design landscape/photo icon used for the image attachment button in ChatActivity. Replaced the previous `text` (compose) icon. |
+
+### Session 32 (Duplicate Resource Fix — Redundant PNGs Removed from Mipmap Density Dirs)
+| File | Purpose |
+|------|---------|
+| *No new files* | All changes are file deletions (see ##5) |
+
 ### Session 31 (Lint Cleanup — ObsoleteSdkInt, Overdraw, NestedWeights & NotifyDataSetChanged)
 | File | Purpose |
 |------|---------|
@@ -326,6 +341,56 @@ No code changes — re-ran engine tests (17/17 passed) and `assembleDebug` (BUIL
 ---
 
 ## 5. Files Modified
+
+### Session 34 (F2P Serverless Crash Fix — NPE Guard in startEngine + Executor Crash Barrier)
+
+| File | What Changed |
+|------|-------------|
+| `F2PBridge.java` | **Two crash fixes for F2P Serverless engine startup:**
+  - **Null-guarded `udpMeshManager.addRebindListener()`** — `startUdpMesh()` can fail (no Wi-Fi, port in use, missing permissions) and set `udpMeshManager = null`. The subsequent call to `udpMeshManager.addRebindListener()` caused a **NullPointerException** on the executor thread, crashing the app. Now wrapped in `if (udpMeshManager != null)` guard. Also null-guarded `wifiDirectManager.startDiscovery()` inside the callback.
+  - **Wrapped executor body in try-catch(Throwable)** — The entire `executor.execute(() -> ...)` block in `startEngineAsync()` was unprotected. Any unhandled exception from `startEngine()` would propagate to the executor thread's uncaught exception handler, crashing the app. Now the catch block logs the error, resets all state flags, and reports the error to the listener via the main looper so the UI can show a Snackbar instead of crashing.
+  - Fixes the root cause of the consistent crash when switching to F2P Serverless mode. |
+
+### Session 33 (UI/UX Polish — Image Icon, Top Bar Redesign, SOSBlue→Offline-36 Cleanup)
+
+| File | What Changed |
+|------|-------------|
+| `drawable/ic_image.xml` | **NEW** — Material Design landscape/photo vector drawable (mountain + sun). Used as the image attachment button icon in ChatActivity, replacing the previous `@drawable/text` compose icon. |
+| `activity_chat.xml` | **Three changes:**
+  - **Removed top-left app icon FrameLayout** — The `appIcon` ImageView, `onlineIndicator` View, and their enclosing FrameLayout were deleted. The app icon is no longer shown in the top bar header — replaced by the "Offline-36" title text.
+  - **Added `peerCountBadge` after title** — The peer count badge was inside the deleted FrameLayout. Re-added as a standalone TextView after the title so the `foundViewById(R.id.peerCountBadge)` code in ChatActivity continues to work.
+  - **Changed attachment button src** from `@drawable/text` to `@drawable/ic_image` (proper image/photo icon).
+  - **Changed SOSBlue Mesh radio button** to use `@string/transport_sosblue_mesh` which resolves to "Offline-36 Mesh".
+  - **Default title text**: set to "Offline-36" (overridden by chat partner name when a recipient is loaded). |
+| `activity_main.xml` | **Three changes:**
+  - **Removed top-left app icon FrameLayout** — Same removal as ChatActivity. The `appIcon`, `onlineIndicator`, and FrameLayout are gone.
+  - **Default title**: changed from "Chats" to "Offline-36".
+  - **FAB icon**: changed from `@drawable/text` to `@drawable/ic_bottom_chat` (chat bubble icon for "Start New Chat"). |
+| `activity_settings.xml` | **Replaced SOSBlue references with Offline-36:**
+  - Radio button: hardcoded "SOSBlue Mesh" → `@string/transport_sosblue_mesh`.
+  - App name: "SOSBlue" → "Offline-36".
+  - Subtitle: "Secure Offline-Safe Blue Messenger" → "Offline Mesh Messenger".
+  - About description: hardcoded string → `@string/settings_about_desc` (already correct). |
+| `activity_news_feed.xml` | **Radio button text**: hardcoded "SOSBlue Mesh" → `@string/transport_sosblue_mesh`. |
+| `ChatActivity.java` | **Media save paths**: Updated gallery paths from `/SOSBlue` to `/Offline-36` for both `DIRECTORY_MOVIES` and `DIRECTORY_PICTURES`. |
+| `MainActivity.java` | **Title update**: `refreshConversationList()` now always sets the title to "Offline-36" instead of dynamically showing "Chats" / "Chats (N)". |
+| `NotificationHelper.java` | **Channel description**: Updated from "SOSBlue Mesh" to "Offline-36 Mesh" — this text appears in the system notification settings UI. |
+| `NewsFeedActivity.java` | **Demo text**: Updated from "Welcome to SOSBlue Broadcast News!" to "Welcome to Offline-36 Broadcast News!". |
+
+### Session 32 (Duplicate Resource Fix — Redundant PNGs Removed from Mipmap Density Dirs)
+
+| File | What Changed |
+|------|-------------|
+| `mipmap-mdpi/ic_launcher_background.png` | **DELETED** — Redundant raster PNG conflicting with `drawable/ic_launcher_background.xml` vector drawable. The adaptive icon XML (`mipmap-anydpi/ic_launcher.xml`) references `@drawable/ic_launcher_background`, so the mipmap PNG was never used and caused `mergeDebugResources` / `packageDebugResources` build failures. |
+| `mipmap-hdpi/ic_launcher_background.png` | **DELETED** — Same redundant resource as mdpi variant, across hdpi density. |
+| `mipmap-xhdpi/ic_launcher_background.png` | **DELETED** — Same fix for xhdpi. |
+| `mipmap-xxhdpi/ic_launcher_background.png` | **DELETED** — Same fix for xxhdpi. |
+| `mipmap-xxxhdpi/ic_launcher_background.png` | **DELETED** — Same fix for xxxhdpi. |
+| `mipmap-mdpi/ic_launcher_foreground.png` | **DELETED** — Redundant raster PNG conflicting with `drawable/ic_launcher_foreground.xml` vector drawable. Same root cause as background PNGs. |
+| `mipmap-hdpi/ic_launcher_foreground.png` | **DELETED** — Same redundant resource for hdpi density. |
+| `mipmap-xhdpi/ic_launcher_foreground.png` | **DELETED** — Same fix for xhdpi. |
+| `mipmap-xxhdpi/ic_launcher_foreground.png` | **DELETED** — Same fix for xxhdpi. |
+| `mipmap-xxxhdpi/ic_launcher_foreground.png` | **DELETED** — Same fix for xxxhdpi. |
 
 ### Session 31 (Lint Cleanup — ObsoleteSdkInt, Overdraw, NestedWeights & NotifyDataSetChanged)
 

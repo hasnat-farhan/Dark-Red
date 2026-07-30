@@ -264,13 +264,18 @@ public class F2PBridge {
         // ── Register a post-rebind listener to re-sync peer endpoints ─
         // After the UDP socket is re-created on network change, we need
         // to re-register the packet listener with the new socket.
-        udpMeshManager.addRebindListener(() -> {
-            Log.i(TAG, "Post-rebind: re-syncing peer discovery state");
-            // Clear the engine-level peer endpoints so they get re-discovered
-            engine.getPeerDiscovery().clearAllEndpoints();
-            // Start Wi-Fi Direct discovery as a fallback
-            wifiDirectManager.startDiscovery();
-        });
+        // NOTE: udpMeshManager may be null if startUdpMesh() failed (e.g.
+        // no Wi-Fi, port in use, missing permissions). Guard accordingly.
+        if (udpMeshManager != null) {
+            udpMeshManager.addRebindListener(() -> {
+                    // Clear the engine-level peer endpoints so they get re-discovered
+                engine.getPeerDiscovery().clearAllEndpoints();
+                // Start Wi-Fi Direct discovery as a fallback
+                if (wifiDirectManager != null) {
+                    wifiDirectManager.startDiscovery();
+                }
+            });
+        }
 
         // Register the default logging listener
         engine.registerListener(new EngineCallback() {
@@ -500,16 +505,30 @@ public class F2PBridge {
         }
 
         executor.execute(() -> {
-            // Reset the guard so future calls can start the engine again
-            // after this one completes (whether success or failure).
-            engineStarting.set(false);
-            startEngine(config);
-            android.os.Handler mainHandler = new android.os.Handler(
-                    android.os.Looper.getMainLooper());
-            if (listener != null) {
-                if (started.get()) {
-                    mainHandler.post(listener::onEngineStarted);
-                } else {
+            try {
+                // Reset the guard so future calls can start the engine again
+                // after this one completes (whether success or failure).
+                engineStarting.set(false);
+                startEngine(config);
+                android.os.Handler mainHandler = new android.os.Handler(
+                        android.os.Looper.getMainLooper());
+                if (listener != null) {
+                    if (started.get()) {
+                        mainHandler.post(listener::onEngineStarted);
+                    } else {
+                        mainHandler.post(() ->
+                                listener.onEngineError(lastStatusCode, lastStatusMessage));
+                    }
+                }
+            } catch (Throwable t) {
+                Log.e(TAG, "FATAL: Engine startup threw unexpected exception", t);
+                engineStarting.set(false);
+                started.set(false);
+                lastStatusCode = 99;
+                lastStatusMessage = "Unexpected engine error: " + t.getMessage();
+                if (listener != null) {
+                    android.os.Handler mainHandler = new android.os.Handler(
+                            android.os.Looper.getMainLooper());
                     mainHandler.post(() ->
                             listener.onEngineError(lastStatusCode, lastStatusMessage));
                 }

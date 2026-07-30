@@ -744,6 +744,8 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
             TextView titleView = findViewById(R.id.appTitle);
             if (titleView != null) {
                 titleView.setText(displayName);
+            } else {
+                // Fallback: title defaults to "Offline-36" in layout
             }
             // Mark conversation as read when opened from inbox
             ConversationRegistry.markRead(recipientFromIntent);
@@ -919,7 +921,7 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
             startActivity(newsIntent);
         });
 
-        // Overflow menu (3 dots) → PopupMenu with options
+        // Overflow menu (3 dots) → PopupMenu with options (including Nearby Devices)
         findViewById(R.id.threeDotIcon).setOnClickListener(v -> {
             android.widget.PopupMenu popup = new android.widget.PopupMenu(ChatActivity.this, v);
             popup.getMenuInflater().inflate(R.menu.top_app_bar_menu, popup.getMenu());
@@ -932,21 +934,22 @@ MessageModel inbound = new MessageModel(finalText, false, finalSender, myPhone,
                     startActivity(new Intent(ChatActivity.this,
                             com.antor.sosblue.settings.SettingsActivity.class));
                     return true;
+                } else if (id == R.id.menu_nearby) {
+                    // Toggle the peer bar (previously handled by the inline title)
+                    if (peerBarCard.getVisibility() == View.VISIBLE) {
+                        peerBarCard.setVisibility(View.GONE);
+                    } else {
+                        refreshPeerBar();
+                        peerBarCard.setVisibility(View.VISIBLE);
+                    }
+                    return true;
                 }
                 return false;
             });
             popup.show();
         });
 
-        // "Nearby Devices" title → toggle peer bar
-        findViewById(R.id.titleContainer).setOnClickListener(v -> {
-            if (peerBarCard.getVisibility() == View.VISIBLE) {
-                peerBarCard.setVisibility(View.GONE);
-            } else {
-                refreshPeerBar();
-                peerBarCard.setVisibility(View.VISIBLE);
-            }
-        });
+        // Title container removed — Nearby Devices action moved into overflow menu
 
         // ---------------------------------------------------------------
         //  Attachment button → media picker (images + videos)
@@ -2251,11 +2254,11 @@ markMessageStatus(outbound, MessageModel.STATUS_FAILED);
             if (isVideo) {
                 collection = android.provider.MediaStore.Video.Media
                         .EXTERNAL_CONTENT_URI;
-                relativePath = Environment.DIRECTORY_MOVIES + "/SOSBlue";
+                relativePath = Environment.DIRECTORY_MOVIES + "/Offline-36";
             } else {
                 collection = android.provider.MediaStore.Images.Media
                         .EXTERNAL_CONTENT_URI;
-                relativePath = Environment.DIRECTORY_PICTURES + "/SOSBlue";
+                relativePath = Environment.DIRECTORY_PICTURES + "/Offline-36";
             }
 
             // Create metadata
