@@ -4,7 +4,7 @@
 **Last Build:** `assembleDebug` — **BUILD SUCCESSFUL** (verified Jul 30, 2026)
 **Lint:** 183 warnings, **0 errors** (down from 221)
 **Engine Tests:** 17/17 passed (7 Integration + 5 Routing + 5 Security — verified Jul 30, 2026)
-**Latest Session:** UI/UX Refactoring — Clean Inbox, Streamlined Navigation, Transport in ChatActivity (Jul 30, 2026)
+**Latest Session:** New Chat FAB + Home Screen Polish (Jul 30, 2026)
 
 ---
 
@@ -287,7 +287,16 @@ No code changes — re-ran engine tests (17/17 passed) and `assembleDebug` (BUIL
 
 ## 5. Files Modified
 
-### Session 13 (Current — UI/UX Refactoring: Clean Inbox & Streamlined Navigation)
+### Session 14 (Current — New Chat FAB + Home Screen Polish)
+
+| File | What Changed |
+|------|-------------|
+| `activity_main.xml` | **Added FloatingActionButton** (`@+id/newChatFab`) at bottom-right with `layout_gravity="bottom|end"`, 56dp, `@drawable/text` compose icon, `@color/primary_red` background tint, 20dp margin. **Increased RecyclerView `paddingBottom`** from 0dp to 80dp to prevent the FAB from overlapping the last conversation card. Empty state text updated from "No conversations yet" to "No conversations yet\n\nTap + to start a new chat". |
+| `MainActivity.java` | **Added FAB click handler** — `findViewById(R.id.newChatFab).setOnClickListener()` opens `ChatActivity` with no extras (empty recipient field), allowing the user to type any phone number to start a new 1-on-1 conversation. **Removed unnecessary try-catch wrapper** in `onDestroy()` (was logging nothing). |
+
+### Session 13 (UI/UX Refactoring: Clean Inbox & Streamlined Navigation)
+
+
 
 | File | What Changed |
 |------|-------------|
@@ -591,6 +600,12 @@ When a P2P peer is selected:
 ---
 
 ## 7. Key Features Implemented
+
+### ✅ New Chat FAB — Start Conversations from Home (Session 14)
+- **FloatingActionButton** (56dp red circle with compose icon) pinned to bottom-right of the inbox screen.
+- Tapping the FAB opens `ChatActivity` with an empty recipient field — type any phone number to start a new 1-on-1 conversation.
+- RecyclerView has 80dp bottom padding so the last conversation card is always visible above the FAB.
+- Empty state now reads "Tap + to start a new chat" giving clear next-step guidance.
 
 ### ✅ Clean Conversation Inbox — Home Screen UX Refactored (Session 13)
 - **`MainActivity` completely stripped down** to a pure conversation inbox. Removed ALL: message composers, send buttons, transport radio group (SOSBlue Mesh / F2P Serverless / SMS), peer discovery panel, reply preview, and loading indicators.

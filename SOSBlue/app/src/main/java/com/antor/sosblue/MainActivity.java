@@ -164,6 +164,11 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
+        // ── New Chat FAB → Open ChatActivity (empty, for fresh conversation)
+        findViewById(R.id.newChatFab).setOnClickListener(v -> {
+            startActivity(new Intent(MainActivity.this, ChatActivity.class));
+        });
+
         // RSS/feed icon → Open NewsFeedActivity
         findViewById(R.id.discoverIcon).setOnClickListener(v -> {
             startActivity(new Intent(MainActivity.this, NewsFeedActivity.class));

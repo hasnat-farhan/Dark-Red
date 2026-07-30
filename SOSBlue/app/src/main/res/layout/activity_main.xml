@@ -147,7 +147,7 @@
     </LinearLayout>
 
     <!-- ============================================================
-         Content: Conversation Inbox + Empty State
+         Content: Conversation Inbox + Empty State + New Chat FAB
          ============================================================ -->
     <FrameLayout
         android:layout_width="match_parent"
@@ -160,7 +160,8 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:clipToPadding="false"
-            android:paddingVertical="4dp" />
+            android:paddingBottom="80dp"
+            android:paddingTop="4dp" />
 
         <!-- Empty state (shown when no conversations exist) -->
         <TextView
@@ -172,6 +173,22 @@
             android:textColor="@color/icon_tint"
             android:textSize="16sp"
             android:visibility="gone" />
+
+        <!-- New Chat FAB — bottom-right, red circle with compose icon -->
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/newChatFab"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|end"
+            android:layout_margin="20dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:contentDescription="New Chat"
+            app:srcCompat="@drawable/text"
+            app:backgroundTint="@color/primary_red"
+            app:fabSize="normal"
+            app:tint="@color/white"
+            app:elevation="6dp" />
 
     </FrameLayout>
 
