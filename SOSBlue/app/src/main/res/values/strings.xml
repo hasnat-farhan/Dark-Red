@@ -1,6 +1,8 @@
 <resources>
     <string name="app_name">SOSBlue</string>
     <string name="hint_recipient_phone">Recipient Phone (e.g. +8801XXXXXXXX)</string>
+    <string name="transport_sosblue_mesh">SOSBlue Mesh</string>
+    <string name="transport_f2p_serverless">F2P Serverless</string>
     <string name="transport_sms">SMS Relay</string>
     <string name="transport_sms_unavailable">SMS not available on this device</string>
     <string name="transport_sms_permission_required">SMS permission required to send via carrier</string>
@@ -9,4 +11,105 @@
     <string name="transport_f2p">F2P</string>
     <string name="sms_send_ok">Sent via SMS</string>
     <string name="sms_send_failed">SMS send failed</string>
+
+    <!-- News Broadcast -->
+    <string name="news_title">Broadcast News</string>
+    <string name="news_composer_hint">Share news to all...</string>
+    <string name="news_search_hint">Search news by text or sender...</string>
+    <string name="news_empty_hint">No news broadcasts yet.</string>
+    <string name="news_sent_mesh">News broadcast via SOSBlue Mesh</string>
+    <string name="news_sent_f2p">News broadcast via F2P</string>
+    <string name="news_sent_sms">News broadcast via SMS</string>
+    <string name="news_failed">News broadcast failed</string>
+
+    <!-- Bottom Navigation -->
+    <string name="nav_chats">Chats</string>
+    <string name="nav_news">News</string>
+
+    <!-- Notifications -->
+    <string name="channel_chat_name">Direct Messages</string>
+    <string name="channel_chat_desc">Notifications for incoming peer-to-peer messages</string>
+    <string name="channel_news_name">News Broadcasts</string>
+    <string name="channel_news_desc">Notifications for broadcast news items</string>
+
+    <!-- Overflow Menu -->
+    <string name="menu_switch_chat">Switch to Chat Feed</string>
+    <string name="menu_switch_news">Switch to News Feed</string>
+    <string name="menu_settings">Settings / Mode Switch</string>
+    <string name="menu_about">How SOSBlue Works</string>
+
+    <!-- Dialogs -->
+    <string name="dialog_transport_title">Transport Mode</string>
+    <string name="dialog_cancel">Cancel</string>
+    <string name="dialog_about_title">How SOSBlue Works</string>
+    <string name="dialog_about_message">SOSBlue — Secure Offline-Safe Blue Messenger
+
+Version 1.0
+
+HOW IT WORKS:
+
+1. Your Identity
+Your phone number is your identity. All messages are end-to-end encrypted using AES-256-GCM keys derived from phone numbers.
+
+2. Three Transport Tiers
+
+• SOSBlue Mesh — Discover nearby devices via UDP broadcast on local Wi-Fi. Messages hop through the mesh with TTL-based relay for extended range. No internet needed.
+
+• F2P Serverless — The Wandering Fibre Engine routes encrypted packets through the mesh. Peers discover each other via UDP heartbeats every 3 seconds. Multi-hop routing with automatic deduplication.
+
+• SMS Relay — As a last-resort fallback, messages are sent as encrypted SMS envelopes via carrier SMS. Only works with contacts you have previously chatted with via SMS.
+
+3. Peer Discovery
+Devices broadcast heartbeat beacons over UDP every 3 seconds. Discovered peers appear in the nearby devices list. IP endpoints are tracked for direct unicast.
+
+4. News Broadcasts
+Broadcast news to all connected peers via Mesh or F2P, or to SMS contacts only (via SMS Relay). News items appear in a dedicated feed with transport badges.
+
+5. Offline-First
+No central server, no cloud, no internet required. Works entirely on local networks. Perfect for disaster zones, remote areas, or privacy-conscious users.
+
+All messages are end-to-end encrypted.</string>
+    <string name="dialog_ok">OK</string>
+
+    <!-- Search -->
+    <string name="search_chat_hint">Search messages by text or sender...</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_transport_header">TRANSPORT MODE</string>
+    <string name="settings_transport_desc">Select how your messages are sent</string>
+    <string name="settings_notifications_header">NOTIFICATIONS</string>
+    <string name="settings_chat_notifications">Direct Messages</string>
+    <string name="settings_chat_notifications_desc">Notifications for 1:1 chat messages</string>
+    <string name="settings_news_notifications">News Broadcasts</string>
+    <string name="settings_news_notifications_desc">Notifications for broadcast news items</string>
+    <string name="settings_about_header">ABOUT</string>
+    <string name="settings_about_subtitle">Secure Offline-Safe Blue Messenger</string>
+    <string name="settings_about_desc">A peer-to-peer messaging app with 3-tier transport:
+
+• SOSBlue Mesh (BLE / WiFi-Direct P2P)
+• F2P Serverless (WanderingFibreEngine)
+• SMS Relay (carrier fallback)
+
+All messages are end-to-end encrypted.</string>
+    <string name="settings_reset_defaults">Reset to Defaults</string>
+    <string name="settings_reset_toast">Settings reset to defaults</string>
+    <string name="settings_switched_toast">Switched to %s</string>
+    <string name="settings_back">Back</string>
+
+    <!-- Media Download -->
+    <string name="download_media_title">Save Media</string>
+    <string name="download_media_message">Save this %s to your device?
+
+File: %s
+Size: %s
+Type: %s</string>
+    <string name="download_media_confirm">Save to Gallery</string>
+    <string name="download_media_cancel">Cancel</string>
+    <string name="download_media_saved">Media saved to gallery 📁</string>
+    <string name="download_media_failed">Failed to save media</string>
+    <string name="download_permission_required">Storage permission needed to save media</string>
+
+    <!-- Main Screen -->
+    <string name="start_new_chat">Start New Chat</string>
 </resources>

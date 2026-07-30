@@ -1,5 +1,6 @@
 package com.antor.sosblue.identity;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Build;
@@ -123,10 +124,8 @@ public final class UserIdentity {
                 .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
     }
 
+    @SuppressLint("NewApi")
     private static boolean isIsolatedProcess() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
-            return Process.isIsolated();
-        }
-        return false;
+        return Process.isIsolated();
     }
 }

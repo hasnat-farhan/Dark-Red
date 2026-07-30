@@ -14,9 +14,20 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <!-- COARSE must accompany FINE on Android 12+ (users can grant only COARSE) -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"
+        android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" />
+
+    <!-- Notifications (runtime-dangerous on Android 13+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Storage permission for saving media to gallery (Android 9 and below, API < 29) -->
+    <!-- Android 10+ uses MediaStore which does not require storage permission -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
 
     <!-- Bluetooth permissions for P2P / classic Bluetooth mesh fallback -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
@@ -26,14 +37,12 @@
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.SEND_SMS" />
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
 
-    <!-- Wi-Fi Direct / P2P (for direct device-to-device connections) -->
-    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
-
-    <!-- Wi-Fi Direct P2P required features (optional — app still works without it) -->
+    <!-- Hardware features (all optional — app degrades gracefully) -->
     <uses-feature android:name="android.hardware.wifi.direct" android:required="false" />
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
 
     <application
         android:name=".SOSBlueApplication"
@@ -46,9 +55,20 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Dummy_SOSBlue">
 
-        <!-- Main chat / launcher activity -->
+        <!-- Main chat activity (launched from inbox) -->
         <activity
             android:name=".ChatActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".identity.SignInActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- Inbox / launcher activity -->
+        <activity
+            android:name=".MainActivity"
             android:exported="true"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
@@ -58,12 +78,12 @@
         </activity>
 
         <activity
-            android:name=".identity.SignInActivity"
+            android:name=".news.NewsFeedActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
 
         <activity
-            android:name=".MainActivity"
+            android:name=".settings.SettingsActivity"
             android:exported="false" />
 
         <!-- Wi-Fi Direct P2P broadcast receiver (self-registered by WifiDirectManager) -->

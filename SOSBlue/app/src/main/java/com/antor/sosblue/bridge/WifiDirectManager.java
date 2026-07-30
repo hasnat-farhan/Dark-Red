@@ -165,7 +165,11 @@ public class WifiDirectManager {
         filter.addAction(WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION);
         filter.addAction(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION);
         filter.addAction(WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION);
-        appContext.registerReceiver(p2pReceiver, filter);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            appContext.registerReceiver(p2pReceiver, filter, Context.RECEIVER_EXPORTED);
+        } else {
+            appContext.registerReceiver(p2pReceiver, filter);
+        }
         receiverRegistered = true;
 
         Log.i(TAG, "Wi-Fi Direct initialized and receiver registered");
@@ -401,12 +405,11 @@ public class WifiDirectManager {
         if (info == null) return;
 
         String goIp = null;
-        if (info.groupOwnerAddress != null) {                        // info.groupOwnerAddress IS an InetAddress; call getHostAddress()
-                        // directly to get the dotted-decimal IP string.
-                        InetAddress addr = info.groupOwnerAddress;
-                        if (addr != null) {
-                            goIp = addr.getHostAddress();
-                        }
+        if (info.groupOwnerAddress != null) {
+            InetAddress addr = info.groupOwnerAddress;
+            if (addr != null) {
+                goIp = addr.getHostAddress();
+            }
         }
 
         Log.i(TAG, "P2P connection info: groupOwner=" + info.isGroupOwner

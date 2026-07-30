@@ -1,5 +1,6 @@
 package com.antor.sosblue.bridge;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Build;
@@ -82,11 +83,9 @@ public enum TransportMode {
      * Returns {@code true} when running inside an isolated / sandboxed
      * child process where privileged system services are unavailable.
      */
+    @SuppressLint("NewApi")
     private static boolean isIsolatedProcess() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
-            return Process.isIsolated();
-        }
-        return false;
+        return Process.isIsolated();
     }
 
     // ----------------------------------------------------------------
@@ -143,7 +142,6 @@ public enum TransportMode {
             TelephonyManager tm = (TelephonyManager)
                     context.getSystemService(Context.TELEPHONY_SERVICE);
             if (tm == null) return false;
-
             // Primary: SIM state. Doesn't require READ_PHONE_STATE on
             // most OEMs (Samsung, Pixel, OnePlus) and is accurate on
             // tablets with a cellular radio too.

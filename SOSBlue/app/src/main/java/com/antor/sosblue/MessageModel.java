@@ -161,9 +161,9 @@ public class MessageModel {
     public String getFormattedSize() {
         if (mediaSize <= 0) return "";
         if (mediaSize < 1024) return mediaSize + " B";
-        if (mediaSize < 1024 * 1024) return String.format("%.1f KB", mediaSize / 1024.0);
-        if (mediaSize < 1024 * 1024 * 1024) return String.format("%.1f MB", mediaSize / (1024.0 * 1024));
-        return String.format("%.2f GB", mediaSize / (1024.0 * 1024));
+if (mediaSize < 1024 * 1024) return String.format(java.util.Locale.ROOT, "%.1f KB", mediaSize / 1024.0);
+        if (mediaSize < 1024 * 1024 * 1024) return String.format(java.util.Locale.ROOT, "%.1f MB", mediaSize / (1024.0 * 1024));
+        return String.format(java.util.Locale.ROOT, "%.2f GB", mediaSize / (1024.0 * 1024 * 1024));
     }
 
     /**

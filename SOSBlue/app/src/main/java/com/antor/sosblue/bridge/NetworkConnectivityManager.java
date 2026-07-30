@@ -167,7 +167,11 @@ public class NetworkConnectivityManager {
             }
         };
         IntentFilter wifiFilter = new IntentFilter(WifiManager.NETWORK_STATE_CHANGED_ACTION);
-        appContext.registerReceiver(wifiStateReceiver, wifiFilter);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            appContext.registerReceiver(wifiStateReceiver, wifiFilter, Context.RECEIVER_EXPORTED);
+        } else {
+            appContext.registerReceiver(wifiStateReceiver, wifiFilter);
+        }
 
         // ── Also listen for CONNECTIVITY_ACTION (API < 24) ────────────
         networkStateReceiver = new BroadcastReceiver() {
@@ -184,7 +188,11 @@ public class NetworkConnectivityManager {
         IntentFilter connFilter = new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION);
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
             // CONNECTIVITY_ACTION is deprecated on N+, but still works on older
-            appContext.registerReceiver(networkStateReceiver, connFilter);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                appContext.registerReceiver(networkStateReceiver, connFilter, Context.RECEIVER_EXPORTED);
+            } else {
+                appContext.registerReceiver(networkStateReceiver, connFilter);
+            }
         }
 
         registered = true;
@@ -312,8 +320,8 @@ public class NetworkConnectivityManager {
             }
             // Prefer wlan interfaces
             Collections.sort(sorted, (a, b) -> {
-                boolean aWifi = a.getName() != null && a.getName().toLowerCase().contains("wlan");
-                boolean bWifi = b.getName() != null && b.getName().toLowerCase().contains("wlan");
+            boolean aWifi = a.getName() != null && a.getName().toLowerCase(java.util.Locale.ROOT).contains("wlan");
+            boolean bWifi = b.getName() != null && b.getName().toLowerCase(java.util.Locale.ROOT).contains("wlan");
                 return Boolean.compare(bWifi, aWifi);
             });
 

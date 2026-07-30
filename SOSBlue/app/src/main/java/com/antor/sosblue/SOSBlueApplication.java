@@ -1,5 +1,6 @@
 package com.antor.sosblue;
 
+import android.annotation.SuppressLint;
 import android.app.Application;
 import android.os.Build;
 import android.os.Process;
@@ -33,6 +34,23 @@ public class SOSBlueApplication extends Application {
             return;
         }
 
+        // ── Global uncaught exception handler ───────────────────────
+        // Catches any exception that would otherwise crash the app,
+        // logs it, and prevents the OS from showing a sudden close.
+        // The app will still exit, but without the jarring ANR dialog,
+        // and we get the stack trace in logcat.
+        final Thread.UncaughtExceptionHandler defaultHandler =
+                Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+            Log.e(TAG, "UNCAUGHT EXCEPTION in thread " + thread.getName(), throwable);
+            // Log key context
+            Log.e(TAG, "Process: " + Build.MODEL + " (" + Build.VERSION.SDK_INT + ")");
+            // Let the default handler terminate the process
+            if (defaultHandler != null) {
+                defaultHandler.uncaughtException(thread, throwable);
+            }
+        });
+
         // Normal initialisation for the main / non-isolated processes.
         Log.i(TAG, "SOSBlueApplication initialised (pid=" + Process.myPid() + ")");
     }
@@ -60,11 +78,8 @@ public class SOSBlueApplication extends Application {
      * sandboxed child process where privileged system services are
      * unavailable.
      */
+    @SuppressLint("NewApi")
     private boolean isIsolatedProcess() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
-            return Process.isIsolated();
-        }
-        // Pre-4.2 devices do not support isolated processes.
-        return false;
+        return Process.isIsolated();
     }
 }

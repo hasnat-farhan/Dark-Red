@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
@@ -55,9 +56,26 @@
                 android:background="@drawable/circle_bg"
                 android:backgroundTint="#80000000"
                 android:padding="12dp"
-                android:tint="@color/white"
+                app:tint="@color/white"
                 android:visibility="gone"
                 android:contentDescription="Play video" />
+
+            <!-- Download button overlay (top-right corner) -->
+            <ImageView
+                android:id="@+id/downloadButton"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_gravity="top|end"
+                android:layout_marginTop="8dp"
+                android:layout_marginEnd="8dp"
+                android:src="@drawable/ic_download"
+                android:background="@drawable/circle_bg"
+                android:backgroundTint="#CC000000"
+                android:scaleType="centerInside"
+                android:padding="6dp"
+                android:elevation="2dp"
+                android:visibility="gone"
+                android:contentDescription="Download media" />
 
             <!-- Progress bar for uploading -->
             <ProgressBar
@@ -101,7 +119,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textColor="@color/bubble_incoming_timestamp"
-                android:textSize="10sp"
+                android:textSize="12sp"
                 android:layout_marginEnd="6dp" />
 
             <ImageView
@@ -118,7 +136,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textColor="@color/bubble_incoming_timestamp"
-                android:textSize="11sp" />
+                android:textSize="12sp" />
         </LinearLayout>
     </LinearLayout>
 </LinearLayout>

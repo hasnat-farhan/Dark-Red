@@ -1,9 +1,12 @@
 package com.antor.sosblue.bridge;
 
 import android.content.BroadcastReceiver;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.database.Cursor;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -20,9 +23,13 @@ import com.antor.sosblue.identity.UserIdentity;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -96,8 +103,27 @@ public class SmsTransport {
     /** Main-thread handler for listener callbacks. */
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
+    /**
+     * Set of SMS inbox row IDs already processed by {@link #scanInbox()}.
+     * Persisted across calls so a re-scan doesn't re-deliver the same
+     * envelope. Cleared automatically when the process dies.
+     */
+    private final Set<Long> processedInboxIds =
+            Collections.newSetFromMap(new ConcurrentHashMap<Long, Boolean>());
+
     public SmsTransport(Context context) {
         this.appContext = context.getApplicationContext();
+    }
+
+    /**
+     * Shuts down the background executor. Call when done with this transport.
+     */
+    public void shutdown() {
+        try {
+            executor.shutdownNow();
+        } catch (Exception e) {
+            Log.w(TAG, "Executor shutdown failed: " + e.getMessage());
+        }
     }
 
     // ----------------------------------------------------------------
@@ -249,6 +275,91 @@ public class SmsTransport {
         String full = body.toString();
         Log.d(TAG, "onSmsReceived len=" + full.length() + " head="
                 + (full.length() > 24 ? full.substring(0, 24) + "…" : full));
+        dispatchEnvelopeFromBody(full);
+    }
+
+    /**
+     * Queries the system SMS inbox for DR1 envelopes that haven't yet
+     * been delivered to listeners.
+     *
+     * <p>This is the recovery path for self-sent messages (where the
+     * {@code SMS_RECEIVED} broadcast may fire before our receiver is
+     * registered) and for messages that arrived while the app process
+     * was dead. It is read-only — it never deletes or marks envelopes
+     * as read. Already-processed ids are tracked in
+     * {@link #processedInboxIds} so re-scanning is idempotent.</p>
+     *
+     * <p>Requires {@code android.permission.READ_SMS} at runtime.
+     * If the permission is missing, the query simply fails and a
+     * warning is logged — no exception is propagated upward.</p>
+     */
+    public void scanInbox() {
+        executor.execute(() -> {
+            if (envelopeListeners.isEmpty()) {
+                Log.d(TAG, "scanInbox: no listeners, skipping");
+                return;
+            }
+            ContentResolver cr;
+            Cursor cursor = null;
+            try {
+                cr = appContext.getContentResolver();
+                Uri inbox = Uri.parse("content://sms/inbox");
+                String[] projection = new String[] { "_id", "address", "body", "date" };
+                String selection = "body LIKE ?";
+                String[] selArgs = new String[] { "DR1:%" };
+                cursor = cr.query(inbox, projection, selection, selArgs, "date DESC");
+                if (cursor == null) {
+                    Log.w(TAG, "scanInbox: cursor is null (provider not available)");
+                    return;
+                }
+                int idCol = cursor.getColumnIndex("_id");
+                int bodyCol = cursor.getColumnIndex("body");
+                if (idCol < 0 || bodyCol < 0) {
+                    Log.w(TAG, "scanInbox: missing expected columns");
+                    return;
+                }
+                int processed = 0;
+                long newestId = 0;
+                while (cursor.moveToNext()) {
+                    long id = cursor.getLong(idCol);
+                    if (id > newestId) newestId = id;
+                    if (processedInboxIds.contains(id)) continue;
+                    String body = cursor.getString(bodyCol);
+                    if (body == null) continue;
+                    try {
+                        dispatchEnvelopeFromBody(body);
+                        processedInboxIds.add(id);
+                        processed++;
+                    } catch (Throwable t) {
+                        Log.w(TAG, "scanInbox: dispatch failed for id=" + id
+                                + ": " + t.getMessage());
+                    }
+                }
+                Log.i(TAG, "scanInbox: processed " + processed
+                        + " new envelope(s), newestId=" + newestId);
+            } catch (SecurityException se) {
+                Log.w(TAG, "scanInbox query failed: " + se.getMessage());
+            } catch (Throwable t) {
+                Log.w(TAG, "scanInbox error: " + t.getMessage());
+            } finally {
+                if (cursor != null) {
+                    try { cursor.close(); } catch (Throwable ignored) {}
+                }
+            }
+        });
+    }
+
+    /**
+     * Decodes a raw SMS body (possibly a multi-part reassembly) and,
+     * if it's a DR1 envelope addressed to this device, hands the
+     * encrypted payload to every registered listener.
+     *
+     * <p>Shared by {@link #onSmsReceived(SmsMessage[])} (the
+     * broadcast path) and {@link #scanInbox()} (the polling path)
+     * so both honour the same filtering + dispatch logic.</p>
+     */
+    private void dispatchEnvelopeFromBody(String full) {
+        if (full == null) return;
         if (!full.startsWith(MAGIC + ":")) return;          // not our protocol
         String[] seg = full.split(":", 3);
         if (seg.length != 3) return;

@@ -47,6 +47,10 @@
     <color name="badge_bg">#D32F2F</color>
     <color name="badge_text">#FFFFFF</color>
 
+    <!-- News Transport Badge Backgrounds (saturated chip colours, white text on top) -->
+    <color name="f2p_badge_bg">#388E3C</color>
+    <color name="sms_badge_bg">#455A64</color>
+
     <!-- Recipient Phone Input -->
     <color name="recipient_input_bg">#1E1E24</color>
     <color name="recipient_input_border">#D32F2F</color>

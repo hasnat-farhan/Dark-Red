@@ -1,0 +1,305 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/newsRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/chat_background"
+    android:orientation="vertical"
+    tools:context=".news.NewsFeedActivity">
+
+    <!-- ============================================================
+         Top App Bar — Title + Search + Overflow Menu
+         ============================================================ -->
+    <LinearLayout
+        android:id="@+id/newsTopBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/top_bar_background"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingTop="4dp"
+        android:paddingEnd="4dp"
+        android:paddingBottom="8dp"
+        android:elevation="2dp">
+
+        <!-- App icon -->
+        <FrameLayout
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginEnd="8dp">
+
+            <ImageView
+                android:id="@+id/newsAppIcon"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@drawable/circle_bg"
+                android:scaleType="centerInside"
+                android:src="@drawable/feed" />
+
+            <View
+                android:id="@+id/newsOnlineIndicator"
+                android:layout_width="10dp"
+                android:layout_height="10dp"
+                android:layout_gravity="bottom|end"
+                android:background="@drawable/circle_bg"
+                android:backgroundTint="@color/online_green"
+                android:elevation="2dp"
+                android:visibility="gone" />
+        </FrameLayout>
+
+        <!-- Title -->
+        <TextView
+            android:id="@+id/newsTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:singleLine="true"
+            android:text="Broadcast News"
+            android:textColor="@color/title_text"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <!-- Search icon -->
+        <ImageView
+            android:id="@+id/newsSearchIcon"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:padding="6dp"
+            android:scaleType="centerInside"
+            android:src="@drawable/search"
+            app:tint="@color/icon_tint"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="?android:attr/selectableItemBackgroundBorderless" />
+
+        <!-- Overflow menu -->
+        <ImageView
+            android:id="@+id/newsOverflowIcon"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:padding="6dp"
+            android:scaleType="centerInside"
+            android:src="@drawable/dot3"
+            app:tint="@color/icon_tint"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="?android:attr/selectableItemBackgroundBorderless" />
+
+    </LinearLayout>
+
+    <!-- Search bar overlay (hidden by default) -->
+    <LinearLayout
+        android:id="@+id/newsSearchBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/top_bar_background"
+        android:orientation="horizontal"
+        android:paddingHorizontal="12dp"
+        android:paddingBottom="8dp"
+        android:visibility="gone">
+
+        <EditText
+            android:id="@+id/newsSearchInput"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@drawable/bg_input_pill"
+            android:hint="Search news by text or sender..."
+            android:textColorHint="@color/input_hint"
+            android:imeOptions="actionSearch"
+            android:inputType="text"
+            android:singleLine="true"
+            android:paddingStart="14dp"
+            android:paddingTop="10dp"
+            android:paddingEnd="14dp"
+            android:paddingBottom="10dp"
+            android:textColor="@color/input_text"
+            android:textSize="14sp" />
+
+        <ImageView
+            android:id="@+id/newsSearchClose"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_marginStart="8dp"
+            android:padding="8dp"
+            android:scaleType="centerInside"
+            android:src="@drawable/close"
+            app:tint="@color/icon_tint"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="?android:attr/selectableItemBackgroundBorderless" />
+
+    </LinearLayout>
+
+    <!-- ============================================================
+         Transport selector for composing news
+         ============================================================ -->
+    <HorizontalScrollView
+        android:id="@+id/newsTransportScroll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fillViewport="false"
+        android:scrollbars="none"
+        android:overScrollMode="never"
+        android:background="@color/chat_background"
+        android:paddingHorizontal="16dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="2dp"
+        android:visibility="visible">
+
+        <RadioGroup
+            android:id="@+id/newsTransportRadioGroup"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:checkedButton="@+id/news_rb_sosblue_mesh">
+
+            <RadioButton
+                android:id="@+id/news_rb_sosblue_mesh"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="SOSBlue Mesh"
+                android:textSize="13sp"
+                android:textColor="@color/transport_text"
+                android:buttonTint="@color/transport_button_tint"
+                android:checked="true" />
+
+            <RadioButton
+                android:id="@+id/news_rb_f2p_serverless"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="F2P Serverless"
+                android:textSize="13sp"
+                android:textColor="@color/transport_text"
+                android:buttonTint="@color/transport_button_tint"
+                android:layout_marginStart="16dp" />
+
+            <RadioButton
+                android:id="@+id/news_rb_sms_fallback"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/transport_sms"
+                android:textSize="13sp"
+                android:textColor="@color/transport_text"
+                android:buttonTint="@color/transport_button_tint"
+                android:layout_marginStart="16dp" />
+
+        </RadioGroup>
+
+    </HorizontalScrollView>
+
+    <!-- ============================================================
+         Main content: News RecyclerView or empty state
+         ============================================================ -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/newsRecyclerView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:padding="8dp" />
+
+        <TextView
+            android:id="@+id/newsEmptyHint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center"
+            android:text="No news broadcasts yet.\nTap the compose field below to share news."
+            android:textColor="@color/peer_detail_text"
+            android:textSize="16sp"
+            android:visibility="visible" />
+
+    </FrameLayout>
+
+    <!-- ============================================================
+         News compose bar (text + optional media + transport select + send)
+         ============================================================ -->
+    <LinearLayout
+        android:id="@+id/newsComposeBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/input_bar_background"
+        android:elevation="4dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingTop="6dp"
+        android:paddingEnd="6dp"
+        android:paddingBottom="6dp">
+
+        <!-- Attachment button -->
+        <ImageView
+            android:id="@+id/newsAttachButton"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:padding="6dp"
+            android:scaleType="centerInside"
+            android:src="@drawable/nearby"
+            app:tint="@color/attachment_icon"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="?android:attr/selectableItemBackgroundBorderless" />
+
+        <!-- Text input -->
+        <EditText
+            android:id="@+id/newsInputText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginHorizontal="6dp"
+            android:background="@drawable/bg_input_pill"
+            android:hint="Share news to all..."
+            android:textColorHint="@color/input_hint"
+            android:imeOptions="actionSend"
+            android:inputType="textMultiLine"
+            android:maxLines="4"
+            android:minLines="1"
+            android:paddingStart="14dp"
+            android:paddingTop="10dp"
+            android:paddingEnd="10dp"
+            android:paddingBottom="10dp"
+            android:textColor="@color/input_text"
+            android:textSize="14sp" />
+
+        <!-- Send button -->
+        <FrameLayout
+            android:id="@+id/newsSendContainer"
+            android:layout_width="40dp"
+            android:layout_height="40dp">
+
+            <ImageView
+                android:id="@+id/newsSendButton"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@drawable/sent"
+                android:scaleType="centerInside"
+                android:background="@drawable/bg_send_button"
+                android:foreground="?android:attr/selectableItemBackgroundBorderless"
+                android:padding="10dp"
+                app:tint="@color/white" />
+
+            <FrameLayout
+                android:id="@+id/newsLoadingContainer"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:visibility="gone">
+
+                <ProgressBar
+                    android:id="@+id/newsSendProgress"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:indeterminateTint="@color/primary_red" />
+            </FrameLayout>
+        </FrameLayout>
+
+    </LinearLayout>
+
+</LinearLayout>
